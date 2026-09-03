@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Unbounded", "Manrope", system-ui, sans-serif;
+  --font-sans: "Manrope", system-ui, -apple-system, sans-serif;
+
+  --color-ink-600: #54446b;
+  --color-ink-700: #423457;
+  --color-ink-800: #2a1f38;
+  --color-ink-900: #1b1226;
+  --color-ink-950: #120c1a;
+
+  --color-milk-50: #fbfaf8;
+  --color-milk-100: #f5f2f1;
+  --color-milk-200: #eae4e4;
+  --color-milk-300: #ddd4d5;
+
+  --color-berry-50: #fdeff5;
+  --color-berry-100: #fadcea;
+  --color-berry-200: #f5b8d2;
+  --color-berry-300: #ef92ba;
+  --color-berry-400: #e56ba0;
+  --color-berry-500: #d94b88;
+  --color-berry-600: #c23571;
+  --color-berry-700: #9e2a5c;
+
+  --color-honey-100: #fbf0d7;
+  --color-honey-200: #f7e3ae;
+  --color-honey-300: #efcf7f;
+  --color-honey-400: #e8b95a;
+  --color-honey-500: #dda33e;
+  --color-honey-600: #c48a2c;
+  --color-honey-700: #9c6c1f;
+
+  --color-jade-100: #e2f3f0;
+  --color-jade-300: #a5dbd3;
+  --color-jade-400: #6fc4b9;
+  --color-jade-500: #2fa396;
+  --color-jade-600: #22857b;
+  --color-jade-700: #1b6a62;
+
+  --color-coral-100: #fbe5e1;
+  --color-coral-500: #e05c4a;
+  --color-coral-600: #c4453a;
+  --color-coral-700: #9e362d;
+
+  --animate-fade: fade 0.22s ease both;
+  --animate-rise: rise 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-pop: pop 0.26s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+
+  @keyframes fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(22px) scale(0.985); }
+    to { opacity: 1; transform: translateY(0); scale: 1; }
+  }
+  @keyframes pop {
+    from { opacity: 0; transform: scale(0.94) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background: var(--color-milk-100);
+    color: var(--color-ink-900);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: var(--color-berry-200);
+  }
+  input[type="time"]::-webkit-calendar-picker-indicator,
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    opacity: 0.5;
+  }
+}
