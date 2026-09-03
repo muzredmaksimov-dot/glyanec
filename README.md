@@ -51,7 +51,7 @@ npm run build    # продакшен-сборка в dist/
 
 ### 2. Создайте таблицу (один раз)
 1. В меню слева выберите **SQL Editor** (иконка `>_`) → **New query**.
-2. Вставьте скрипт и нажмите **Run**:
+2. Вставьте скрипт и нажмите **Run** (скрипт безопасен — его можно запускать сколько угодно раз):
 
 ```sql
 create table if not exists glyanets_kv (
@@ -62,12 +62,21 @@ create table if not exists glyanets_kv (
 
 alter table glyanets_kv enable row level security;
 
+drop policy if exists "anon read"   on glyanets_kv;
+drop policy if exists "anon insert" on glyanets_kv;
+drop policy if exists "anon update" on glyanets_kv;
+
 create policy "anon read"   on glyanets_kv for select to anon using (true);
 create policy "anon insert" on glyanets_kv for insert to anon with check (true);
 create policy "anon update" on glyanets_kv for update to anon using (true);
 
-alter publication supabase_realtime add table glyanets_kv;
+do $$ begin
+  alter publication supabase_realtime add table glyanets_kv;
+exception when duplicate_object then null;
+end $$;
 ```
+
+> Если видите ошибку вида `already exists` — это значит, что всё уже было создано ранее. Просто запустите обновлённый скрипт выше, он всё «починит» без ошибок.
 
 ### 3. Вставьте ключи в сайт
 1. В Supabase: **Settings** (шестерёнка внизу слева) → **API**.

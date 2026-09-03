@@ -1,8 +1,9 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { cx } from "../lib/util";
-import { IcCheck, IcStar, IcX } from "./icons";
+import { IcArrowL, IcArrowR, IcCheck, IcStar, IcX } from "./icons";
 import { STATUS_META } from "../lib/types";
 import type { ApptStatus } from "../lib/types";
+import { MONTHS_NOM, WD, todayISO, toISO, wdIndex } from "../lib/schedule";
 
 /* ─── Тосты ─── */
 type Toast = { id: number; msg: string; tone: "ok" | "err" | "info" };
@@ -180,5 +181,111 @@ export function Confirm({ open, onClose, onYes, title, text, danger }: { open: b
         <Btn v={danger ? "danger" : "primary"} onClick={() => { onYes(); onClose(); }}><IcCheck size={16} />Да, продолжить</Btn>
       </div>
     </Modal>
+  );
+}
+
+/* ─── Календарь-месяц (бесконечный выбор даты) ─── */
+export function CalendarMonth({ selected, onSelect, slotsFor }: {
+  selected: string | null;
+  onSelect: (iso: string) => void;
+  slotsFor: (iso: string) => string[];
+}) {
+  const today = todayISO();
+  const init = selected && selected >= today ? selected : today;
+  const [ym, setYm] = useState(() => ({ y: +init.slice(0, 4), m: +init.slice(5, 7) - 1 }));
+  const key = `${ym.y}-${ym.m}`;
+
+  const grid = useMemo(() => {
+    const dim = new Date(ym.y, ym.m + 1, 0).getDate();
+    const offset = wdIndex(toISO(new Date(ym.y, ym.m, 1)));
+    const cells: (string | null)[] = Array.from({ length: offset }, () => null);
+    for (let d = 1; d <= dim; d++) cells.push(`${ym.y}-${String(ym.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+    return cells;
+  }, [ym.y, ym.m]);
+
+  const avail = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const iso of grid) if (iso && iso >= today) map[iso] = slotsFor(iso).length;
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, today]);
+
+  const withSlots = Object.values(avail).filter((n) => n > 0).length;
+  const curYm = { y: +today.slice(0, 4), m: +today.slice(5, 7) - 1 };
+  const canPrev = ym.y > curYm.y || (ym.y === curYm.y && ym.m > curYm.m);
+  const nav = (dir: number) => {
+    const d = new Date(ym.y, ym.m + dir, 1);
+    setYm({ y: d.getFullYear(), m: d.getMonth() });
+  };
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-ink-900/10 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-ink-900/8 bg-milk-100/60 px-3 py-2.5">
+        <button onClick={() => nav(-1)} disabled={!canPrev} aria-label="Предыдущий месяц"
+          className="grid h-8 w-8 place-items-center rounded-lg text-ink-800 transition-all hover:bg-berry-100 hover:text-berry-700 active:scale-90 disabled:opacity-25 disabled:pointer-events-none cursor-pointer">
+          <IcArrowL size={16} />
+        </button>
+        <div key={key} className="animate-fade font-display text-[15px] font-bold text-ink-900">
+          {MONTHS_NOM[ym.m]} <span className="text-ink-700/50 tabular-nums">{ym.y}</span>
+        </div>
+        <button onClick={() => nav(1)} aria-label="Следующий месяц"
+          className="grid h-8 w-8 place-items-center rounded-lg text-ink-800 transition-all hover:bg-berry-100 hover:text-berry-700 active:scale-90 cursor-pointer">
+          <IcArrowR size={16} />
+        </button>
+      </div>
+      <div className="px-2.5 pb-2.5 pt-2">
+        <div className="grid grid-cols-7 px-0.5">
+          {WD.map((w) => <span key={w} className="py-1 text-center text-[10px] font-bold uppercase tracking-wider text-ink-700/45">{w}</span>)}
+        </div>
+        <div key={`g-${key}`} className="animate-fade grid grid-cols-7 gap-1">
+          {grid.map((iso, i) => {
+            if (!iso) return <span key={`e${i}`} />;
+            const n = avail[iso] ?? 0;
+            const past = iso < today;
+            const dead = past || n === 0;
+            const sel = selected === iso;
+            const isToday = iso === today;
+            return (
+              <button key={iso} disabled={dead} onClick={() => onSelect(iso)}
+                className={cx(
+                  "relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm font-bold tabular-nums transition-all duration-150 cursor-pointer",
+                  sel
+                    ? "bg-berry-600 text-white shadow-lg shadow-berry-600/30 scale-[1.04]"
+                    : dead
+                      ? "cursor-not-allowed text-ink-900/22"
+                      : "text-ink-900 hover:bg-berry-50 hover:text-berry-700 active:scale-90",
+                  isToday && !sel && "ring-1.5 ring-berry-400/70"
+                )}>
+                {+iso.slice(8)}
+                {n > 0 && <span className={cx("absolute bottom-1 h-1 w-1 rounded-full", sel ? "bg-honey-300" : "bg-berry-500")} />}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex items-center justify-between border-t border-ink-900/6 px-1 pt-2 text-[10px] font-bold text-ink-700/55">
+          <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-berry-500" />есть свободные окна</span>
+          <span>{withSlots > 0 ? `${withSlots} ${withSlots === 1 ? "день" : withSlots < 5 ? "дня" : "дней"} со окнами` : "в этом месяце окон нет"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Сетка слотов (переносится на любую ширину) ─── */
+export function SlotChips({ slots, selected, onSelect }: { slots: string[]; selected: string | null; onSelect: (t: string) => void }) {
+  return (
+    <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(74px, 1fr))" }}>
+      {slots.map((t) => (
+        <button key={t} onClick={() => onSelect(t)}
+          className={cx(
+            "rounded-lg border-[1.5px] py-2.5 text-sm font-bold tabular-nums transition-all duration-150 cursor-pointer active:scale-95",
+            selected === t
+              ? "border-berry-500 bg-berry-600 text-white shadow-md shadow-berry-600/25"
+              : "border-ink-900/12 bg-white text-ink-900 hover:-translate-y-0.5 hover:border-berry-400 hover:text-berry-700"
+          )}>
+          {t}
+        </button>
+      ))}
+    </div>
   );
 }

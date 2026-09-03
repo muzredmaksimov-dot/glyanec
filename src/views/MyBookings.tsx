@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import type { Appointment } from "../lib/types";
 import { PAYMENTS } from "../lib/types";
-import { useDB, cancelByClient, hasReview, addReview } from "../lib/store";
-import { fmtDate, todayISO, isActive } from "../lib/schedule";
+import { useDB, cancelByClient, rescheduleAppt, hasReview, addReview } from "../lib/store";
+import { fmtDate, todayISO, isActive, freeSlots } from "../lib/schedule";
 import { cx, fmtMoney, fmtPhone, normPhone, timeAgo } from "../lib/util";
-import { Btn, Confirm, StatusBadge, useToast, inp, Badge, Empty, Modal } from "../components/ui";
-import { IcArrowL, IcBell, IcPhone, IcArrowR, IcBan, IcStar } from "../components/icons";
+import { Btn, Confirm, StatusBadge, useToast, inp, Badge, Empty, Modal, CalendarMonth, SlotChips } from "../components/ui";
+import { IcArrowL, IcBell, IcPhone, IcArrowR, IcBan, IcStar, IcCalendar, IcCheck } from "../components/icons";
 
 export default function MyBookings() {
   const db = useDB();
@@ -14,6 +14,7 @@ export default function MyBookings() {
   const [searched, setSearched] = useState(false);
   const [toCancel, setToCancel] = useState<string | null>(null);
   const [reviewFor, setReviewFor] = useState<Appointment | null>(null);
+  const [resched, setResched] = useState<Appointment | null>(null);
 
   const norm = normPhone(phone);
   const my = useMemo(() => {
@@ -88,7 +89,10 @@ export default function MyBookings() {
                           </div>
                           <div className="mt-0.5 text-xs font-semibold text-ink-700/60">{PAYMENTS[a.paymentMethod]} · {fmtMoney(a.price)}{m?.address ? ` · ${m.address}` : ""}</div>
                         </div>
-                        <Btn v="dangerGhost" sm onClick={() => setToCancel(a.id)}><IcBan size={14} />Отменить</Btn>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <Btn v="outline" sm onClick={() => setResched(a)}><IcCalendar size={13} />Перенести</Btn>
+                          <Btn v="dangerGhost" sm onClick={() => setToCancel(a.id)}><IcBan size={14} />Отменить</Btn>
+                        </div>
                       </div>
                     );
                   })}
@@ -147,9 +151,57 @@ export default function MyBookings() {
       </div>
 
       {reviewFor && <ReviewModal appt={reviewFor} onClose={() => setReviewFor(null)} />}
+      {resched && <RescheduleModal appt={resched} onClose={() => setResched(null)} />}
       <Confirm open={!!toCancel} onClose={() => setToCancel(null)} onYes={() => toCancel && doCancel(toCancel)} danger
         title="Отменить запись?" text="Слот станет доступен другим клиентам, а мастер получит уведомление об отмене." />
     </div>
+  );
+}
+
+/* ─── Перенос записи клиентом ─── */
+function RescheduleModal({ appt, onClose }: { appt: Appointment; onClose: () => void }) {
+  const db = useDB();
+  const toast = useToast();
+  const master = db.masters.find((m) => m.id === appt.masterId);
+  const today = todayISO();
+  const [date, setDate] = useState<string>(appt.date >= today ? appt.date : today);
+  const [start, setStart] = useState<string | null>(null);
+  const slots = useMemo(
+    () => (master ? freeSlots(master, db.appointments, date, appt.durationMin, appt.id) : []),
+    [master, db.appointments, date, appt.durationMin, appt.id]
+  );
+
+  const submit = () => {
+    if (!start) return toast("Выберите новое время", "err");
+    const err = rescheduleAppt(appt.id, date, start, true);
+    if (err) return toast(err, "err");
+    toast("Запись перенесена — мастер подтвердит новое время");
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Перенести запись">
+      <div className="rounded-lg bg-berry-50 border border-berry-200/70 px-3.5 py-2.5 text-sm">
+        <span className="font-bold">{appt.serviceName}</span>
+        <span className="text-berry-700/80"> · сейчас: {fmtDate(appt.date)} в {appt.start}</span>
+      </div>
+      <div className="mt-4 text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 1 — новый день</div>
+      <div className="mt-2">
+        <CalendarMonth selected={date} onSelect={(d) => { setDate(d); setStart(null); }}
+          slotsFor={(iso) => (master ? freeSlots(master, db.appointments, iso, appt.durationMin, appt.id) : [])} />
+      </div>
+      <div className="mt-4 flex items-baseline justify-between gap-2">
+        <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 2 — новое время</div>
+        {slots.length > 0 && <span className="text-[11px] font-bold text-jade-600">{slots.length} свободно</span>}
+      </div>
+      {slots.length === 0 ? (
+        <p className="mt-2 rounded-lg bg-milk-100 px-3.5 py-3 text-[12px] font-semibold text-ink-700/70">На этот день свободных окон нет — выберите другую дату.</p>
+      ) : (
+        <div className="mt-2"><SlotChips slots={slots} selected={start} onSelect={setStart} /></div>
+      )}
+      <Btn className="mt-4 w-full" disabled={!start} onClick={submit}><IcCheck size={16} />Подтвердить перенос</Btn>
+      <p className="mt-2 text-center text-[11px] text-ink-700/55">После переноса запись получит статус «Ожидает» — мастер подтвердит новое время.</p>
+    </Modal>
   );
 }
 

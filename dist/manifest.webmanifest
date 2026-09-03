@@ -2,13 +2,20 @@
   "name": "Глянец — запись и CRM для бьюти-мастеров",
   "short_name": "Глянец",
   "description": "Онлайн-запись, календарь, CRM и статистика для мастеров бьюти-сферы Беларуси",
-  "start_url": ".",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#1B1226",
   "theme_color": "#1B1226",
   "lang": "ru",
+  "categories": ["business", "productivity"],
   "icons": [
     { "src": "https://image.qwenlm.ai/generated-images/d6f7b473-8512-424a-996f-2579acb49cb5/_result.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "https://image.qwenlm.ai/generated-images/d6f7b473-8512-424a-996f-2579acb49cb5/_result.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Мои записи", "url": "./#/my", "description": "Найти записи по телефону" },
+    { "name": "Кабинет мастера", "url": "./#/app", "description": "Календарь и клиенты" },
+    { "name": "Каталог мастеров", "url": "./#/masters", "description": "Записаться онлайн" }
   ]
 }

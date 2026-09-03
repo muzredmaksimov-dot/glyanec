@@ -4,7 +4,7 @@ import { PAYMENTS, STATUS_META } from "../../lib/types";
 import { useDB, useSession, logout, book, setApptStatus, rescheduleAppt, planOf, markAllRead, markRead, unreadFor } from "../../lib/store";
 import { freeSlots, nextDays, todayISO, fmtDate, fmtRange, mondayOf, addDays, fromISO, mh, hm, wdIndex, WD, dayInfo } from "../../lib/schedule";
 import { cx, fmtMoney, fmtPhone, timeAgo } from "../../lib/util";
-import { Btn, Modal, Confirm, useToast, inp, Field, Avatar, StatusBadge } from "../../components/ui";
+import { Btn, Modal, Confirm, useToast, inp, Field, Avatar, StatusBadge, CalendarMonth, SlotChips } from "../../components/ui";
 import {
   IcCalendar, IcUsers, IcChart, IcBell, IcSliders, IcSparkle, IcLogout, IcExternal,
   IcPlus, IcCheck, IcX, IcClock, IcArrowL, IcArrowR, IcUser,
@@ -426,55 +426,41 @@ function NewBookingModal({ master, init, onClose }: { master: Master; init: { cl
 function RescheduleModal({ master, appt, onClose }: { master: Master; appt: Appointment; onClose: () => void }) {
   const db = useDB();
   const toast = useToast();
-  const days = nextDays(14);
-  const [date, setDate] = useState(appt.date >= todayISO() ? appt.date : days[0]);
-  const [start, setStart] = useState(appt.start);
+  const [date, setDate] = useState<string>(appt.date >= todayISO() ? appt.date : todayISO());
+  const [start, setStart] = useState<string | null>(null);
   const slots = useMemo(() => freeSlots(master, db.appointments, date, appt.durationMin, appt.id), [master, db.appointments, date, appt]);
-  useEffect(() => {
-    if (start && !slots.includes(start)) setStart(slots[0] ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots.join(",")]);
   const client = db.clients.find((c) => c.id === appt.clientId);
 
   return (
     <Modal open onClose={onClose} title="Перенести запись">
-      <p className="text-sm text-ink-800/75">
-        <b>{client?.name ?? "Клиент"}</b> · {appt.serviceName}, {appt.durationMin} мин. Сейчас: {fmtDate(appt.date)}, {appt.start}.
-        Клиент получит уведомление о переносе.
-      </p>
-      <div className="mt-4 flex gap-1.5 overflow-x-auto pb-1">
-        {days.map((d) => {
-          const n = freeSlots(master, db.appointments, d, appt.durationMin, appt.id).length;
-          return (
-            <button key={d} onClick={() => setDate(d)} disabled={n === 0}
-              className={cx("flex min-w-[52px] flex-col items-center rounded-lg border-[1.5px] px-1.5 py-1.5 cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed",
-                date === d ? "border-berry-500 bg-berry-600 text-white" : "border-ink-900/12 hover:border-berry-300")}>
-              <span className="text-[9px] font-bold uppercase opacity-70">{WD[wdIndex(d)]}</span>
-              <span className="font-display text-sm font-bold tabular-nums">{fromISO(d).getDate()}</span>
-              <span className={cx("text-[9px] font-bold", date === d ? "text-honey-300" : "text-jade-600")}>{n}</span>
-            </button>
-          );
-        })}
+      <div className="rounded-lg bg-berry-50 border border-berry-200/70 px-3.5 py-2.5 text-sm">
+        <span className="font-bold">{client?.name ?? "Клиент"}</span>
+        <span className="text-berry-700/80"> · {appt.serviceName}, {appt.durationMin} мин · сейчас: {fmtDate(appt.date)}, {appt.start}</span>
+      </div>
+      <div className="mt-4 text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Новый день</div>
+      <div className="mt-2">
+        <CalendarMonth selected={date} onSelect={(d) => { setDate(d); setStart(null); }}
+          slotsFor={(iso) => freeSlots(master, db.appointments, iso, appt.durationMin, appt.id)} />
+      </div>
+      <div className="mt-4 flex items-baseline justify-between gap-2">
+        <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Новое время</div>
+        {slots.length > 0 && <span className="text-[11px] font-bold text-jade-600">{slots.length} свободно</span>}
       </div>
       {slots.length === 0 ? (
-        <p className="mt-3 rounded-lg bg-milk-100 px-3 py-4 text-center text-xs font-semibold text-ink-700/60">На этот день свободных окон нет</p>
+        <p className="mt-2 rounded-lg bg-milk-100 px-3.5 py-3 text-[12px] font-semibold text-ink-700/70">На этот день свободных окон нет — выберите другую дату.</p>
       ) : (
-        <div className="mt-3 grid max-h-40 grid-cols-3 min-[420px]:grid-cols-4 gap-1.5 overflow-y-auto">
-          {slots.map((t) => (
-            <button key={t} onClick={() => setStart(t)}
-              className={cx("rounded-md border-[1.5px] py-1.5 text-[13px] font-bold tabular-nums cursor-pointer", start === t ? "border-berry-500 bg-berry-600 text-white" : "border-ink-900/12 hover:border-berry-300")}>{t}</button>
-          ))}
-        </div>
+        <div className="mt-2"><SlotChips slots={slots} selected={start} onSelect={setStart} /></div>
       )}
-      <Btn className="mt-4 w-full" disabled={!start || !slots.includes(start)}
+      <Btn className="mt-4 w-full" disabled={!start}
         onClick={() => {
-          const err = rescheduleAppt(appt.id, date, start);
+          const err = rescheduleAppt(appt.id, date, start!);
           if (err) return toast(err, "err");
           toast("Запись перенесена, клиент уведомлён");
           onClose();
         }}>
         <IcCheck size={16} />Подтвердить перенос
       </Btn>
+      <p className="mt-2 text-center text-[11px] text-ink-700/55">Клиент получит уведомление о переносе.</p>
     </Modal>
   );
 }

@@ -508,7 +508,7 @@ export function setApptStatus(id: string, status: ApptStatus, by: "master" | "cl
   return err;
 }
 
-export function rescheduleAppt(id: string, date: string, start: string): string | null {
+export function rescheduleAppt(id: string, date: string, start: string, byClient = false): string | null {
   let err: string | null = null;
   set((d) => {
     const a = d.appointments.find((x) => x.id === id);
@@ -517,9 +517,15 @@ export function rescheduleAppt(id: string, date: string, start: string): string 
     const slots = freeSlots(m, d.appointments, date, a.durationMin, a.id);
     if (!slots.includes(start)) { err = "Это время занято или вне рабочего графика"; return; }
     a.date = date; a.start = start;
+    if (byClient && a.status === "confirmed") a.status = "pending"; // мастер подтвердит новое время
     const c = d.clients.find((x) => x.id === a.clientId);
-    notify(d, { kind: "client", id: c?.phone ?? "" }, "move", "Запись перенесена", `${m.name}: ${a.serviceName}, теперь ${fmtDate(date)} в ${start}`);
-    notify(d, { kind: "master", id: m.id }, "move", "Перенос в календаре", `${c?.name ?? "Клиент"} · ${a.serviceName} → ${fmtDate(date)} в ${start}`);
+    if (byClient) {
+      notify(d, { kind: "master", id: m.id }, "move", "Клиент перенёс запись", `${c?.name ?? "Клиент"} · ${a.serviceName} → ${fmtDate(date)} в ${start}. Подтвердите новое время.`);
+      notify(d, { kind: "client", id: c?.phone ?? "" }, "move", "Запись перенесена", `${m.name}: теперь ${fmtDate(date)} в ${start}. Мастер подтвердит новое время.`);
+    } else {
+      notify(d, { kind: "client", id: c?.phone ?? "" }, "move", "Запись перенесена", `${m.name}: ${a.serviceName}, теперь ${fmtDate(date)} в ${start}`);
+      notify(d, { kind: "master", id: m.id }, "move", "Перенос в календаре", `${c?.name ?? "Клиент"} · ${a.serviceName} → ${fmtDate(date)} в ${start}`);
+    }
   });
   return err;
 }

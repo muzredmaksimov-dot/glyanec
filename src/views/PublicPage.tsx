@@ -2,9 +2,9 @@ import { useMemo, useRef, useState } from "react";
 import type { Appointment } from "../lib/types";
 import { PAYMENTS } from "../lib/types";
 import { useDB, book, getSalonOf } from "../lib/store";
-import { freeSlots, nextDays, fmtDate, WD } from "../lib/schedule";
-import { cx, fmtMoney, downloadICS } from "../lib/util";
-import { Btn, Stars, useToast, inp, Avatar } from "../components/ui";
+import { freeSlots, todayISO, fmtDate, fmtDateLong, WD } from "../lib/schedule";
+import { cx, fmtMoney, downloadICS, plural } from "../lib/util";
+import { Btn, Stars, useToast, inp, Avatar, CalendarMonth, SlotChips } from "../components/ui";
 import { IcSparkle, IcShield, IcClock, IcPin, IcWallet, IcCheck, IcArrowL, IcCopy, IcCalendar, IcDownload, IcArrowR, IcStore, IcGift, IcHeart } from "../components/icons";
 
 export default function PublicPage({ slug, initialDate }: { slug: string; initialDate?: string }) {
@@ -14,11 +14,10 @@ export default function PublicPage({ slug, initialDate }: { slug: string; initia
   const bookRef = useRef<HTMLDivElement>(null);
 
   const services = useMemo(() => db.services.filter((s) => s.masterId === master?.id && s.active), [db.services, master?.id]);
-  const days = useMemo(() => nextDays(14), []);
 
   const [svcId, setSvcId] = useState<string | null>(null);
   const [date, setDate] = useState<string | null>(() =>
-    initialDate && nextDays(14).includes(initialDate) ? initialDate : null
+    initialDate && initialDate >= todayISO() ? initialDate : null
   );
   const [start, setStart] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", payment: "" });
@@ -40,15 +39,10 @@ export default function PublicPage({ slug, initialDate }: { slug: string; initia
   const salon = getSalonOf(master.id);
   const svc = services.find((s) => s.id === svcId) ?? null;
   const slots = svc && date ? freeSlots(master, db.appointments, date, svc.durationMin) : [];
-  const daysWithSlots: { d: string; n: number }[] = svc
-    ? days.map((d) => ({ d, n: freeSlots(master, db.appointments, d, svc.durationMin).length })).filter((x) => x.n > 0)
-    : [];
   const masterReviews = db.reviews.filter((r) => r.masterId === master.id).slice(0, 6);
 
   const pickService = (id: string) => {
-    setSvcId(id); setStart(null); setDone(null);
-    const firstFree = days.find((d) => freeSlots(master, db.appointments, d, services.find((s) => s.id === id)!.durationMin).length > 0);
-    setDate(firstFree ?? null);
+    setSvcId(id); setStart(null); setDone(null); setDate(null);
     setTimeout(() => bookRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
   };
 
@@ -223,34 +217,34 @@ export default function PublicPage({ slug, initialDate }: { slug: string; initia
                         <span className="font-bold tabular-nums text-berry-700">{fmtMoney(svc.price)} · {svc.durationMin} мин</span>
                       </div>
 
-                      <div className="mt-4 grid gap-3 min-[420px]:grid-cols-2">
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 2 — дата</div>
-                          {daysWithSlots.length === 0 ? (
-                            <p className="mt-2 rounded-lg bg-milk-100 px-3 py-2.5 text-[12px] font-semibold text-ink-700/70">На ближайшие 2 недели свободных дней нет</p>
-                          ) : (
-                            <select className={cx(inp, "mt-1.5 cursor-pointer")} value={date ?? ""} onChange={(e) => { setDate(e.target.value || null); setStart(null); }}>
-                              <option value="">— выберите дату —</option>
-                              {daysWithSlots.map(({ d, n }) => (
-                                <option key={d} value={d}>{fmtDate(d)} · свободно: {n}</option>
-                              ))}
-                            </select>
-                          )}
+                      <div className="mt-4">
+                        <div className="flex items-baseline justify-between gap-2">
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 2 — выберите день</div>
+                          {date && <span className="text-[11px] font-bold text-berry-600">{fmtDateLong(date)}</span>}
                         </div>
-                        <div>
-                          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 3 — время</div>
-                          {!date ? (
-                            <p className="mt-1.5 rounded-lg bg-milk-100 px-3 py-2.5 text-[12px] font-semibold text-ink-700/55">Сначала выберите дату</p>
-                          ) : slots.length === 0 ? (
-                            <p className="mt-1.5 rounded-lg bg-milk-100 px-3 py-2.5 text-[12px] font-semibold text-ink-700/70">На этот день окон нет</p>
-                          ) : (
-                            <select className={cx(inp, "mt-1.5 cursor-pointer")} value={start ?? ""} onChange={(e) => setStart(e.target.value || null)}>
-                              <option value="">— выберите время —</option>
-                              {slots.map((t) => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                          )}
+                        <div className="mt-2">
+                          <CalendarMonth selected={date} onSelect={(d) => { setDate(d); setStart(null); }}
+                            slotsFor={(iso) => freeSlots(master, db.appointments, iso, svc.durationMin)} />
                         </div>
                       </div>
+
+                      {date && (
+                        <div className="mt-4">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 3 — время</div>
+                            {slots.length > 0 && (
+                              <span className="text-[11px] font-bold text-jade-600">
+                                {slots.length} {plural(slots.length, ["окно", "окна", "окон"])} свободно
+                              </span>
+                            )}
+                          </div>
+                          {slots.length === 0 ? (
+                            <p className="mt-2 rounded-lg bg-milk-100 px-3.5 py-3 text-[12px] font-semibold text-ink-700/70">На этот день свободных окон нет — выберите другую дату в календаре.</p>
+                          ) : (
+                            <div className="mt-2"><SlotChips slots={slots} selected={start} onSelect={setStart} /></div>
+                          )}
+                        </div>
+                      )}
 
                       {start && date && (
                         <div className="mt-4 border-t border-ink-900/8 pt-4">
