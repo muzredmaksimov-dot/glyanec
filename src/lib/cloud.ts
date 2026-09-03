@@ -16,8 +16,8 @@ import type { DB } from "./types";
  * Таблица создаётся один раз SQL-скриптом из README (раздел «Общее хранилище»).
  */
 export const CLOUD = {
-  url: "",
-  anonKey: "",
+  url: "https://qslodyttjqhiegibbfzu.supabase.co",
+  anonKey: "sb_publishable_gsWUzahzoJfnMN_sDL7paA_uIFH7hnM",
 };
 
 export const cloudReady = () => Boolean(CLOUD.url && CLOUD.anonKey);
