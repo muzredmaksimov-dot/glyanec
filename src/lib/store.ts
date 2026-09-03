@@ -3,6 +3,7 @@ import type { DB, Master, Service, Client, Appointment, Notif, NotifTarget, Plan
 import { PAYMENTS } from "./types";
 import { freeSlots, addDays, todayISO, fmtDate, dayInfo } from "./schedule";
 import { uid, mulberry, normPhone, translit } from "./util";
+import { cloudReady, loadRemote, saveRemote, subscribeRemote, type RemoteRow } from "./cloud";
 
 const DB_KEY = "glyanets_db";
 const SES_KEY = "glyanets_session";
@@ -286,6 +287,73 @@ export const useDB = () => useSyncExternalStore(subscribe, () => db, () => db);
 export const useSession = () => useSyncExternalStore(subscribe, () => session, () => session);
 export const getDB = () => db;
 
+/* ─── Облачная синхронизация ─── */
+let applyingRemote = false;
+let saveTimer: number | null = null;
+let localStamp = 0; // время последней синхронизации (мс)
+let cloudInited = false;
+
+function persistLocal() {
+  try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch { /* ignore */ }
+}
+
+function applyRemote(row: RemoteRow) {
+  const incoming = row.data;
+  if (!incoming || incoming.version !== SEED_VERSION) return;
+  applyingRemote = true;
+  db = { ...incoming };
+  persistLocal();
+  emit();
+  window.setTimeout(() => { applyingRemote = false; }, 120);
+}
+
+function scheduleCloudSave() {
+  if (!cloudReady() || applyingRemote) return;
+  if (saveTimer) window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(() => {
+    localStamp = Date.now();
+    void saveRemote(db);
+  }, 700);
+}
+
+/** Инициализация общего хранилища: вызывается один раз при старте приложения */
+export function initCloud() {
+  if (cloudInited || !cloudReady()) return;
+  cloudInited = true;
+  void loadRemote().then(async (row) => {
+    if (row?.data) {
+      // в облаке уже есть общие данные — берём их
+      applyRemote(row);
+      localStamp = Date.parse(row.updated_at) || Date.now();
+    } else {
+      // первый запуск с облаком — публикуем локальную базу
+      await saveRemote(db);
+      localStamp = Date.now();
+    }
+    // живые обновления с других устройств
+    subscribeRemote((r) => {
+      const ts = Date.parse(r.updated_at) || 0;
+      if (ts > localStamp) { localStamp = ts; applyRemote(r); }
+    });
+    // страховочный опрос раз в 20 секунд (если realtime недоступен)
+    window.setInterval(async () => {
+      const r = await loadRemote();
+      if (!r) return;
+      const ts = Date.parse(r.updated_at) || 0;
+      if (ts > localStamp + 1500) { localStamp = ts; applyRemote(r); }
+    }, 20000);
+  });
+}
+
+export const cloudOn = () => cloudReady();
+export async function pushLocalToCloud(): Promise<string | null> {
+  if (!cloudReady()) return "Облако не настроено — заполните url и anonKey в src/lib/cloud.ts";
+  const ok = await saveRemote(db);
+  if (!ok) return "Не удалось сохранить в облако — проверьте ключи и таблицу";
+  localStamp = Date.now();
+  return null;
+}
+
 export function set(mut: (d: DB) => void) {
   mut(db);
   db = {
@@ -294,8 +362,9 @@ export function set(mut: (d: DB) => void) {
     appointments: [...db.appointments], notifications: [...db.notifications],
     reviews: [...db.reviews], salons: [...db.salons], tickets: [...db.tickets],
   };
-  try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch { /* ignore */ }
+  persistLocal();
   emit();
+  scheduleCloudSave();
 }
 
 export function setSession(s: Session) {
@@ -307,8 +376,17 @@ export function setSession(s: Session) {
 export const notify = (d: DB, target: NotifTarget, type: Notif["type"], title: string, body: string) => {
   d.notifications.unshift({ id: uid(), target, type, title, body, read: false, createdAt: Date.now() });
   try {
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      new Notification(title, { body, icon: "https://image.qwenlm.ai/generated-images/d6f7b473-8512-424a-996f-2579acb49cb5/_result.png" });
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    const icon = "https://image.qwenlm.ai/generated-images/d6f7b473-8512-424a-996f-2579acb49cb5/_result.png";
+    const payload = { type: "glyanets:notify", title, body, tag: `${type}:${target.kind}`, hash: target.kind === "master" ? "#/app" : "#/my" };
+    // через service worker: работает на Android-PWA даже когда вкладка свёрнута
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg) reg.showNotification(title, { body, icon, badge: icon, vibrate: [120, 60, 120], tag: payload.tag, data: { hash: payload.hash } } as NotificationOptions);
+        else new Notification(title, { body, icon });
+      }).catch(() => new Notification(title, { body, icon }));
+    } else {
+      new Notification(title, { body, icon });
     }
   } catch { /* не поддерживается */ }
 };

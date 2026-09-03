@@ -40,6 +40,53 @@ npm run build    # продакшен-сборка в dist/
 Подробная пошаговая инструкция — ниже, в разделе «Развёртывание на GitHub».
 Коротко: создайте репозиторий → запушьте код → включите Pages через GitHub Actions → добавьте `base: "./"` в `vite.config.js`.
 
+## Общее хранилище (облако Supabase)
+
+По умолчанию платформа работает в **локальном режиме**: каждый посетитель видит свою копию данных (в браузере). Чтобы записи клиентов, мастера и пароль администратора стали **общими для всех устройств**, подключите бесплатное облако Supabase (10 минут, без программирования):
+
+### 1. Создайте проект
+1. Откройте [supabase.com](https://supabase.com) → **Start your project** → войдите через GitHub.
+2. Нажмите **New project**: любое название, придумайте пароль (запишите!), регион — ближайший к вам (например, *Central EU (Frankfurt)*).
+3. Подождите 1–2 минуты, пока проект создастся.
+
+### 2. Создайте таблицу (один раз)
+1. В меню слева выберите **SQL Editor** (иконка `>_`) → **New query**.
+2. Вставьте скрипт и нажмите **Run**:
+
+```sql
+create table if not exists glyanets_kv (
+  id int primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+alter table glyanets_kv enable row level security;
+
+create policy "anon read"   on glyanets_kv for select to anon using (true);
+create policy "anon insert" on glyanets_kv for insert to anon with check (true);
+create policy "anon update" on glyanets_kv for update to anon using (true);
+
+alter publication supabase_realtime add table glyanets_kv;
+```
+
+### 3. Вставьте ключи в сайт
+1. В Supabase: **Settings** (шестерёнка внизу слева) → **API**.
+2. Скопируйте **Project URL** и ключ **anon public**.
+3. В репозитории откройте файл `src/lib/cloud.ts` (кнопка-карандаш ✏️ на GitHub) и вставьте значения:
+
+```ts
+export const CLOUD = {
+  url: "https://xxxx.supabase.co",       // ← сюда Project URL
+  anonKey: "eyJhbGciOi...",              // ← сюда anon public key
+};
+```
+
+4. Сохраните (Commit). Через 1–2 минуты сайт пересоберётся — в админке (Настройки → «Данные и облако») появится статус **«подключено»**.
+
+С этого момента все устройства работают с одной базой: смена пароля, новые записи и заявки видны всем сразу.
+
+> Ключ `anon` — публичный, его безопасно класть в код сайта. Для продакшена с реальными деньгами и персональными данными позже стоит настроить строгие RLS-правила и серверную часть.
+
 ## Стек
 
-React 18 · TypeScript · Vite · Tailwind CSS v4 · PWA (service worker + manifest)
+React 18 · TypeScript · Vite · Tailwind CSS v4 · Supabase (опционально) · PWA (service worker + manifest)

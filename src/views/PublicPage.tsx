@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { Appointment } from "../lib/types";
 import { PAYMENTS } from "../lib/types";
 import { useDB, book, getSalonOf } from "../lib/store";
-import { freeSlots, nextDays, fmtDate, wdIndex, WD, fromISO } from "../lib/schedule";
+import { freeSlots, nextDays, fmtDate, WD } from "../lib/schedule";
 import { cx, fmtMoney, downloadICS } from "../lib/util";
 import { Btn, Stars, useToast, inp, Avatar } from "../components/ui";
 import { IcSparkle, IcShield, IcClock, IcPin, IcWallet, IcCheck, IcArrowL, IcCopy, IcCalendar, IcDownload, IcArrowR, IcStore, IcGift, IcHeart } from "../components/icons";
@@ -40,6 +40,9 @@ export default function PublicPage({ slug, initialDate }: { slug: string; initia
   const salon = getSalonOf(master.id);
   const svc = services.find((s) => s.id === svcId) ?? null;
   const slots = svc && date ? freeSlots(master, db.appointments, date, svc.durationMin) : [];
+  const daysWithSlots: { d: string; n: number }[] = svc
+    ? days.map((d) => ({ d, n: freeSlots(master, db.appointments, d, svc.durationMin).length })).filter((x) => x.n > 0)
+    : [];
   const masterReviews = db.reviews.filter((r) => r.masterId === master.id).slice(0, 6);
 
   const pickService = (id: string) => {
@@ -212,44 +215,42 @@ export default function PublicPage({ slug, initialDate }: { slug: string; initia
                 </div>
               ) : (
                 <>
-                  {!svc && <p className="mt-3 rounded-lg bg-milk-100 px-3.5 py-3 text-[13px] font-semibold text-ink-700/70">Шаг 1 — выберите услугу из списка слева{typeof window !== "undefined" && window.innerWidth < 1024 ? " выше" : ""}.</p>}
+                  {!svc && <p className="mt-3 rounded-lg bg-milk-100 px-3.5 py-3 text-[13px] font-semibold text-ink-700/70">Шаг 1 — выберите услугу из списка выше.</p>}
                   {svc && (
                     <>
                       <div className="mt-3 flex items-center justify-between rounded-lg bg-berry-50 border border-berry-200/70 px-3.5 py-2.5 text-sm">
                         <span className="font-bold">{svc.name}</span>
                         <span className="font-bold tabular-nums text-berry-700">{fmtMoney(svc.price)} · {svc.durationMin} мин</span>
                       </div>
-                      <div className="mt-4 text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 2 — дата</div>
-                      <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-                        {days.map((d) => {
-                          const n = freeSlots(master, db.appointments, d, svc.durationMin).length;
-                          return (
-                            <button key={d} onClick={() => { setDate(d); setStart(null); }} disabled={n === 0}
-                              className={cx("flex min-w-[52px] flex-col items-center rounded-lg border-[1.5px] px-1.5 py-1.5 cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed",
-                                date === d ? "border-berry-500 bg-berry-600 text-white" : "border-ink-900/12 hover:border-berry-300")}>
-                              <span className="text-[9px] font-bold uppercase opacity-70">{WD[wdIndex(d)]}</span>
-                              <span className="font-display text-sm font-bold tabular-nums">{fromISO(d).getDate()}</span>
-                              <span className={cx("text-[9px] font-bold", date === d ? "text-honey-300" : "text-jade-600")}>{n > 0 ? n : "—"}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
 
-                      {date && (
-                        <>
-                          <div className="mt-3 text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 3 — время</div>
-                          {slots.length === 0 ? (
-                            <p className="mt-2 rounded-lg bg-milk-100 px-3.5 py-3 text-[13px] font-semibold text-ink-700/70">На этот день свободных окон нет — выберите другую дату.</p>
+                      <div className="mt-4 grid gap-3 min-[420px]:grid-cols-2">
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 2 — дата</div>
+                          {daysWithSlots.length === 0 ? (
+                            <p className="mt-2 rounded-lg bg-milk-100 px-3 py-2.5 text-[12px] font-semibold text-ink-700/70">На ближайшие 2 недели свободных дней нет</p>
                           ) : (
-                            <div className="mt-2 grid grid-cols-3 min-[420px]:grid-cols-4 gap-1.5">
-                              {slots.map((t) => (
-                                <button key={t} onClick={() => setStart(t)}
-                                  className={cx("rounded-md border-[1.5px] py-2 text-[13px] font-bold tabular-nums cursor-pointer transition-all active:scale-95", start === t ? "border-berry-500 bg-berry-600 text-white" : "border-ink-900/12 hover:border-berry-300")}>{t}</button>
+                            <select className={cx(inp, "mt-1.5 cursor-pointer")} value={date ?? ""} onChange={(e) => { setDate(e.target.value || null); setStart(null); }}>
+                              <option value="">— выберите дату —</option>
+                              {daysWithSlots.map(({ d, n }) => (
+                                <option key={d} value={d}>{fmtDate(d)} · свободно: {n}</option>
                               ))}
-                            </div>
+                            </select>
                           )}
-                        </>
-                      )}
+                        </div>
+                        <div>
+                          <div className="text-[11px] font-bold uppercase tracking-wider text-ink-700/60">Шаг 3 — время</div>
+                          {!date ? (
+                            <p className="mt-1.5 rounded-lg bg-milk-100 px-3 py-2.5 text-[12px] font-semibold text-ink-700/55">Сначала выберите дату</p>
+                          ) : slots.length === 0 ? (
+                            <p className="mt-1.5 rounded-lg bg-milk-100 px-3 py-2.5 text-[12px] font-semibold text-ink-700/70">На этот день окон нет</p>
+                          ) : (
+                            <select className={cx(inp, "mt-1.5 cursor-pointer")} value={start ?? ""} onChange={(e) => setStart(e.target.value || null)}>
+                              <option value="">— выберите время —</option>
+                              {slots.map((t) => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          )}
+                        </div>
+                      </div>
 
                       {start && date && (
                         <div className="mt-4 border-t border-ink-900/8 pt-4">

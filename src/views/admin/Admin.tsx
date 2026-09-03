@@ -3,13 +3,14 @@ import type { PlanId } from "../../lib/types";
 import {
   useDB, useSession, loginAdmin, adminSetPlan, adminToggle, adminUpdatePlan, updateAdminCreds,
   approveUpgrade, rejectUpgrade, markAllRead, markRead, unreadFor, resetDemo, logout, setTicketStatus,
+  cloudOn, pushLocalToCloud,
 } from "../../lib/store";
 import { addDays, todayISO, fmtDate, isActive } from "../../lib/schedule";
 import { cx, fmtMoney, fmtPhone, plural, timeAgo } from "../../lib/util";
 import { Btn, Badge, Avatar, Toggle, Confirm, useToast, inp, Field, Empty, Stars } from "../../components/ui";
 import {
   IcShield, IcChart, IcUsers, IcCrown, IcSliders, IcLogout, IcBoost, IcLock, IcCheck, IcX,
-  IcBan, IcExternal, IcCoin, IcBell, IcScissors, IcCalendar, IcInbox,
+  IcBan, IcExternal, IcCoin, IcBell, IcScissors, IcCalendar, IcInbox, IcCloud,
 } from "../../components/icons";
 
 const TABS = [
@@ -447,6 +448,26 @@ function SettingsTab() {
         <section className="rounded-xl border border-ink-900/10 bg-white p-5">
           <h3 className="font-display text-[15px] font-bold flex items-center gap-2"><IcBell size={17} className="text-honey-600" />Служебные уведомления</h3>
           <AdminNotifs />
+        </section>
+        <section className="rounded-xl border border-ink-900/10 bg-white p-5">
+          <h3 className="font-display text-[15px] font-bold flex items-center gap-2">
+            <IcCloud size={17} className="text-jade-600" />Данные и облако
+            {cloudOn() ? <Badge tone="jade">подключено</Badge> : <Badge tone="honey">локальный режим</Badge>}
+          </h3>
+          {cloudOn() ? (
+            <>
+              <p className="mt-1.5 text-xs leading-relaxed text-ink-700/65">
+                Данные общие для всех устройств: записи клиентов, мастера, тарифы и пароль администратора синхронизируются за несколько секунд. Смена пароля на телефоне сразу действует везде.
+              </p>
+              <Btn v="dark" sm className="mt-3" onClick={async () => { const e = await pushLocalToCloud(); e ? toast(e, "err") : toast("Локальные данные загружены в облако"); }}>
+                <IcCloud size={14} />Загрузить локальные данные в облако
+              </Btn>
+            </>
+          ) : (
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-700/65">
+              Пока данные хранятся в браузере каждого посетителя отдельно — поэтому на другом телефоне действует старый пароль, а записи клиентов не видны мастеру. Чтобы включить общее хранилище: создайте бесплатный проект на <b>supabase.com</b>, выполните SQL-скрипт из README (раздел «Общее хранилище») и вставьте два ключа в файл <b>src/lib/cloud.ts</b> в репозитории. Сайт обновится автоматически.
+            </p>
+          )}
         </section>
         <section className="rounded-xl border-[1.5px] border-coral-500/40 bg-white p-5">
           <h3 className="font-display text-[15px] font-bold text-coral-600">Демо-данные</h3>

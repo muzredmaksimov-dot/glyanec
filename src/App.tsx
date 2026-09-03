@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ToastProvider } from "./components/ui";
 import { FeedbackFab } from "./components/Feedback";
-import { runReminderJob } from "./lib/store";
+import { runReminderJob, initCloud } from "./lib/store";
 import Landing from "./views/Landing";
 import PublicPage from "./views/PublicPage";
 import SalonPage from "./views/SalonPage";
@@ -27,6 +27,7 @@ export default function App() {
   const hash = useHash();
 
   useEffect(() => {
+    initCloud();
     runReminderJob();
   }, []);
 

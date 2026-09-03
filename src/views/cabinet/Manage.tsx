@@ -232,6 +232,15 @@ export function NotifsTab({ master }: { master: Master }) {
           <IcBell size={13} />{pushOn ? "Push включены" : "Включить push"}
         </button>
       </div>
+      <div className="mb-4 rounded-xl border border-jade-400/40 bg-jade-100/50 p-4">
+        <div className="flex items-center gap-2 text-[13px] font-bold text-jade-700">Push на Android — как включить</div>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-800/75">
+          <li>Откройте сайт в <b>Chrome</b> и нажмите меню ⋮ → <b>«Добавить на главный экран»</b> (или «Установить приложение»). На Android Chrome выдаёт разрешение на пуш <b>только установленным PWA</b>.</li>
+          <li>Запустите «Глянец» с рабочего стола и здесь нажмите <b>«Включить push»</b> — разрешите уведомления.</li>
+          <li>Если телефон Xiaomi/Samsung/Honor — зайдите в настройки батареи и снимите ограничения для «Глянец», иначе система «усыпит» уведомления.</li>
+        </ol>
+        <p className="mt-2 text-[11px] font-semibold text-ink-700/60">Пуш приходят, когда приложение открыто или свернуто. Полноценные пуш при закрытом приложении появятся после подключения общего облака (раздел «Данные и облако» в админке).</p>
+      </div>
       {list.length === 0 ? <Empty text="Уведомлений пока нет" /> : (
         <div className="space-y-2">
           {list.map((n) => (
