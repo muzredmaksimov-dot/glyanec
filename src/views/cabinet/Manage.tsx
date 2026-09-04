@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Master, Service, PlanId } from "../../lib/types";
 import { PAYMENTS } from "../../lib/types";
-import { useDB, updateMaster, addService, updateService, deleteService, planOf, requestUpgrade, markAllRead, markRead, unreadFor, enablePush, pushGranted } from "../../lib/store";
+import { useDB, updateMaster, addService, updateService, deleteService, planOf, requestUpgrade, markAllRead, markRead, unreadFor, enablePush, pushGranted, sendChat, markChatRead, unreadChatFor } from "../../lib/store";
 import { WD, nextDays, fmtDate, fmtDateLong } from "../../lib/schedule";
 import { cx, fmtMoney, timeAgo } from "../../lib/util";
 import { Btn, Badge, Modal, Confirm, Toggle, useToast, inp, Field, Empty } from "../../components/ui";
-import { IcPlus, IcPen, IcTrash, IcCheck, IcX, IcLock, IcCrown, IcCopy, IcLink, IcBell, IcClock, IcWallet, IcArrowR, IcCalendar, IcGift } from "../../components/icons";
+import { IcPlus, IcPen, IcTrash, IcCheck, IcX, IcLock, IcCrown, IcCopy, IcLink, IcBell, IcClock, IcWallet, IcArrowR, IcCalendar, IcGift, IcChat, IcLifeBuoy } from "../../components/icons";
 
 const PALETTE = ["#D63D80", "#B92C69", "#E3A33D", "#2FA396", "#E05C4A", "#7C5CBF", "#C86FA8", "#5BA85B"];
 
@@ -215,7 +215,7 @@ export function ScheduleTab({ master }: { master: Master }) {
 }
 
 /* ─── Уведомления ─── */
-export function NotifsTab({ master }: { master: Master }) {
+export function NotifsTab({ master, onOpenAppt }: { master: Master; onOpenAppt?: (apptId: string) => void }) {
   const db = useDB();
   const toast = useToast();
   const target = { kind: "master" as const, id: master.id };
@@ -244,13 +244,15 @@ export function NotifsTab({ master }: { master: Master }) {
       {list.length === 0 ? <Empty text="Уведомлений пока нет" /> : (
         <div className="space-y-2">
           {list.map((n) => (
-            <button key={n.id} onClick={() => markRead(n.id)}
-              className={cx("block w-full rounded-xl border px-4 py-3 text-left transition-colors cursor-pointer hover:shadow-sm", n.read ? "border-ink-900/8 bg-white opacity-75" : "border-honey-500/40 bg-honey-100/60")}>
+            <button key={n.id}
+              onClick={() => { markRead(n.id); if (n.apptId && onOpenAppt) onOpenAppt(n.apptId); }}
+              className={cx("block w-full rounded-xl border px-4 py-3 text-left transition-all cursor-pointer hover:shadow-sm active:scale-[.995]", n.read ? "border-ink-900/8 bg-white opacity-75" : "border-honey-500/40 bg-honey-100/60")}>
               <div className="flex items-center gap-2 text-sm font-bold">
                 <span className={cx("h-2 w-2 shrink-0 rounded-full", n.read ? "bg-ink-900/15" : "bg-honey-500")} />{n.title}
                 <span className="ml-auto shrink-0 text-[10px] font-semibold text-ink-700/45">{timeAgo(n.createdAt)}</span>
               </div>
               <div className="mt-0.5 pl-4 text-[13px] text-ink-800/75">{n.body}</div>
+              {n.apptId && <div className="mt-1 pl-4 text-[10px] font-bold uppercase tracking-wider text-berry-600">Открыть запись →</div>}
             </button>
           ))}
         </div>
@@ -385,6 +387,80 @@ export function ProfileTab({ master }: { master: Master }) {
           </div>
           <p className="mt-3 rounded-lg bg-milk-100 px-3.5 py-2.5 text-xs text-ink-700/70">Данные вашего кабинета изолированы: другие мастера не видят ни клиентов, ни записи, ни статистику.</p>
         </section>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Чат с администрацией ─── */
+export function ChatTab({ master }: { master: Master }) {
+  const db = useDB();
+  const [text, setText] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
+  const msgs = db.chat.filter((m) => m.masterId === master.id).sort((a, b) => a.createdAt - b.createdAt);
+  const unread = unreadChatFor(db, master.id, "master");
+
+  // открываем вкладку — входящие от админа считаем прочитанными
+  useEffect(() => {
+    if (unread > 0) markChatRead(master.id, "master");
+  }, [unread, master.id]);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [msgs.length]);
+
+  const submit = () => {
+    if (!text.trim()) return;
+    sendChat(master.id, "master", text);
+    setText("");
+  };
+
+  return (
+    <div className="mx-auto flex h-[calc(100vh-13rem)] max-w-2xl flex-col lg:h-[calc(100vh-11rem)]">
+      <div className="flex items-center gap-3 rounded-t-xl border border-b-0 border-ink-900/10 bg-ink-900 px-4 py-3 text-milk-100">
+        <span className="grid h-10 w-10 place-items-center rounded-lg bg-berry-600 text-white"><IcLifeBuoy size={19} /></span>
+        <div className="min-w-0">
+          <div className="font-display text-sm font-bold">Администрация «Глянец»</div>
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-milk-100/60">
+            <span className="h-1.5 w-1.5 rounded-full bg-jade-400" />обычно отвечаем в течение нескольких часов
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 space-y-2.5 overflow-y-auto border-x border-ink-900/10 bg-white/60 p-4">
+        {msgs.length === 0 && (
+          <div className="grid h-full place-items-center">
+            <div className="max-w-xs text-center">
+              <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-berry-100 text-berry-600"><IcChat size={22} /></span>
+              <p className="mt-3 text-sm font-semibold text-ink-800/70">Напишите сюда по любому вопросу: тарифы, промо страницы, ошибки. Администрация увидит сообщение мгновенно.</p>
+            </div>
+          </div>
+        )}
+        {msgs.map((m) => {
+          const mine = m.from === "master";
+          return (
+            <div key={m.id} className={cx("flex", mine ? "justify-end" : "justify-start")}>
+              <div className={cx("max-w-[82%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm animate-rise",
+                mine ? "rounded-br-sm bg-ink-900 text-milk-50" : "rounded-bl-sm border border-ink-900/8 bg-white text-ink-900")}>
+                <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                <div className={cx("mt-1 text-[10px] font-semibold tabular-nums", mine ? "text-milk-100/50" : "text-ink-700/45")}>
+                  {mine ? "Вы" : "Админ"} · {timeAgo(m.createdAt)}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={endRef} />
+      </div>
+
+      <div className="flex gap-2 rounded-b-xl border border-ink-900/10 bg-white p-2.5">
+        <input
+          className={cx(inp, "flex-1")}
+          placeholder="Сообщение администрации…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }}
+        />
+        <Btn onClick={submit} disabled={!text.trim()} aria-label="Отправить"><IcArrowR size={17} /></Btn>
       </div>
     </div>
   );

@@ -1,13 +1,13 @@
 import { useSyncExternalStore } from "react";
-import type { DB, Master, Service, Client, Appointment, Notif, NotifTarget, PlanId, Session, ApptStatus, Review, Salon, Ticket } from "./types";
+import type { DB, Master, Service, Client, Appointment, Notif, NotifTarget, PlanId, Session, ApptStatus, Review, Salon, Ticket, ChatMessage } from "./types";
 import { PAYMENTS } from "./types";
 import { freeSlots, addDays, todayISO, fmtDate, dayInfo } from "./schedule";
-import { uid, mulberry, normPhone, translit } from "./util";
+import { uid, mulberry, normPhone, translit, fuzzyScore, fmtMoney } from "./util";
 import { cloudReady, loadRemote, saveRemote, subscribeRemote, type RemoteRow } from "./cloud";
 
 const DB_KEY = "glyanets_db";
 const SES_KEY = "glyanets_session";
-const SEED_VERSION = 8;
+const SEED_VERSION = 9;
 
 const IMG = {
   alina: "https://image.qwenlm.ai/generated-images/7f738ec2-30c3-4cfe-b559-b148dc710214/_result.png",
@@ -255,8 +255,16 @@ function seedDB(): DB {
     { id: uid(), author: "Алина Крылова", contact: "@alina_nails", topic: "Вопрос по тарифам", message: "Если перейти на «Профи» в середине месяца — оплата за полный месяц или пропорционально дням?", page: "#/app", status: "resolved", createdAt: Date.now() - 2 * 864e5 },
   ];
 
+  // Чат «мастер ↔ администрация»
+  const chat: ChatMessage[] = [
+    { id: uid(), masterId: "m-alina", from: "master", text: "Здравствуйте! Подскажите, как поменять фотографию на моей странице?", createdAt: Date.now() - 26 * 36e5, readByAdmin: true, readByMaster: true },
+    { id: uid(), masterId: "m-alina", from: "admin", text: "Добрый день, Алина! Кабинет → вкладка «Кабинет» → поле «Фото» → вставьте ссылку на изображение и сохраните. Если что-то не получится — пишите 🙂", createdAt: Date.now() - 25 * 36e5, readByAdmin: true, readByMaster: true },
+    { id: uid(), masterId: "m-mark", from: "master", text: "Добрый день! Хочу перейти на «Профи» — оплата за полный месяц или пропорционально оставшимся дням?", createdAt: Date.now() - 3 * 36e5, readByAdmin: false, readByMaster: true },
+    { id: uid(), masterId: "m-eva", from: "admin", text: "Ева, ваша заявка на «Профи» одобрена! Лимиты уже расширены, напоминания клиентам включены.", createdAt: Date.now() - 20 * 36e5, readByAdmin: true, readByMaster: false },
+  ];
+
   return {
-    version: SEED_VERSION, masters, services, clients, appointments, notifications, reviews, salons, tickets,
+    version: SEED_VERSION, masters, services, clients, appointments, notifications, reviews, salons, tickets, chat,
     settings: { adminLogin: "admin", adminPassword: "admin", plans: DEFAULT_PLANS, lastReminderDate: "" },
   };
 }
@@ -297,11 +305,34 @@ function persistLocal() {
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch { /* ignore */ }
 }
 
+/** Приводит данные из облака к текущей модели (старым снимкам добавляет недостающие поля) */
+function normalizeDB(raw: DB): DB {
+  const d = raw as DB;
+  d.masters = (d.masters ?? []).map((m) => ({
+    ...m,
+    city: m.city ?? "Минск",
+    loyalty: m.loyalty ?? { enabled: false, type: "cashback", value: 5 },
+  }));
+  d.services = d.services ?? [];
+  d.clients = d.clients ?? [];
+  d.appointments = d.appointments ?? [];
+  d.notifications = d.notifications ?? [];
+  d.reviews = d.reviews ?? [];
+  d.salons = d.salons ?? [];
+  d.tickets = d.tickets ?? [];
+  d.chat = d.chat ?? [];
+  d.settings = { ...d.settings, plans: d.settings?.plans ?? DEFAULT_PLANS };
+  return d;
+}
+
 function applyRemote(row: RemoteRow) {
+  // КРИТИЧНО: если есть несохранённые локальные изменения (идёт отложенная запись
+  // в облако) — не перезаписываем их пришедшим снимком, иначе данные теряются.
+  if (saveTimer) return;
   const incoming = row.data;
-  if (!incoming || incoming.version !== SEED_VERSION) return;
+  if (!incoming || !incoming.version) return;
   applyingRemote = true;
-  db = { ...incoming };
+  db = normalizeDB(incoming);
   persistLocal();
   emit();
   window.setTimeout(() => { applyingRemote = false; }, 120);
@@ -360,7 +391,7 @@ export function set(mut: (d: DB) => void) {
     ...db,
     masters: [...db.masters], services: [...db.services], clients: [...db.clients],
     appointments: [...db.appointments], notifications: [...db.notifications],
-    reviews: [...db.reviews], salons: [...db.salons], tickets: [...db.tickets],
+    reviews: [...db.reviews], salons: [...db.salons], tickets: [...db.tickets], chat: [...db.chat],
   };
   persistLocal();
   emit();
@@ -373,8 +404,9 @@ export function setSession(s: Session) {
   emit();
 }
 
-export const notify = (d: DB, target: NotifTarget, type: Notif["type"], title: string, body: string) => {
-  d.notifications.unshift({ id: uid(), target, type, title, body, read: false, createdAt: Date.now() });
+export type NotifMeta = { apptId?: string; masterId?: string; chat?: boolean };
+export const notify = (d: DB, target: NotifTarget, type: Notif["type"], title: string, body: string, meta?: NotifMeta) => {
+  d.notifications.unshift({ id: uid(), target, type, title, body, read: false, createdAt: Date.now(), ...(meta ?? {}) });
   try {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     const icon = "https://image.qwenlm.ai/generated-images/d6f7b473-8512-424a-996f-2579acb49cb5/_result.png";
@@ -482,8 +514,8 @@ export function book(p: BookParams): { ok: boolean; error?: string; appt?: Appoi
       createdAt: Date.now(), source: p.byClient ? "online" : "master",
     };
     d.appointments.push(appt);
-    notify(d, { kind: "master", id: m.id }, "new", p.byClient ? "Новая запись" : "Запись создана", `${client.name} · ${s.name}, ${fmtDate(p.date)} в ${p.start}`);
-    notify(d, { kind: "client", id: phone }, "status", "Запись создана", `${m.name}: ${s.name}, ${fmtDate(p.date)} в ${p.start}`);
+    notify(d, { kind: "master", id: m.id }, "new", p.byClient ? "Новая запись" : "Запись создана", `${client.name} · ${s.name}, ${fmtDate(p.date)} в ${p.start}`, { apptId: appt.id, masterId: m.id });
+    notify(d, { kind: "client", id: phone }, "status", "Запись создана", `${m.name}: ${s.name}, ${fmtDate(p.date)} в ${p.start}`, { apptId: appt.id, masterId: m.id });
     res = { ok: true, appt, newClient };
   });
   return res;
@@ -502,8 +534,8 @@ export function setApptStatus(id: string, status: ApptStatus, by: "master" | "cl
       cancelled: ["cancel", "Запись отменена"], no_show: ["status", "Клиент не пришёл"],
     };
     const [t, title] = meta[status] ?? ["status", "Запись обновлена"];
-    if (by === "master" && c) notify(d, { kind: "client", id: c.phone }, t, title, `${m?.name ?? "Мастер"}: ${a.serviceName}, ${fmtDate(a.date)} в ${a.start}`);
-    if (by === "client" && m) notify(d, { kind: "master", id: m.id }, t, title, `${c?.name ?? "Клиент"} · ${a.serviceName}, ${fmtDate(a.date)} в ${a.start}`);
+    if (by === "master" && c) notify(d, { kind: "client", id: c.phone }, t, title, `${m?.name ?? "Мастер"}: ${a.serviceName}, ${fmtDate(a.date)} в ${a.start}`, { apptId: a.id, masterId: a.masterId });
+    if (by === "client" && m) notify(d, { kind: "master", id: m.id }, t, title, `${c?.name ?? "Клиент"} · ${a.serviceName}, ${fmtDate(a.date)} в ${a.start}`, { apptId: a.id, masterId: a.masterId });
   });
   return err;
 }
@@ -520,11 +552,11 @@ export function rescheduleAppt(id: string, date: string, start: string, byClient
     if (byClient && a.status === "confirmed") a.status = "pending"; // мастер подтвердит новое время
     const c = d.clients.find((x) => x.id === a.clientId);
     if (byClient) {
-      notify(d, { kind: "master", id: m.id }, "move", "Клиент перенёс запись", `${c?.name ?? "Клиент"} · ${a.serviceName} → ${fmtDate(date)} в ${start}. Подтвердите новое время.`);
-      notify(d, { kind: "client", id: c?.phone ?? "" }, "move", "Запись перенесена", `${m.name}: теперь ${fmtDate(date)} в ${start}. Мастер подтвердит новое время.`);
+      notify(d, { kind: "master", id: m.id }, "move", "Клиент перенёс запись", `${c?.name ?? "Клиент"} · ${a.serviceName} → ${fmtDate(date)} в ${start}. Подтвердите новое время.`, { apptId: a.id, masterId: m.id });
+      notify(d, { kind: "client", id: c?.phone ?? "" }, "move", "Запись перенесена", `${m.name}: теперь ${fmtDate(date)} в ${start}. Мастер подтвердит новое время.`, { apptId: a.id, masterId: m.id });
     } else {
-      notify(d, { kind: "client", id: c?.phone ?? "" }, "move", "Запись перенесена", `${m.name}: ${a.serviceName}, теперь ${fmtDate(date)} в ${start}`);
-      notify(d, { kind: "master", id: m.id }, "move", "Перенос в календаре", `${c?.name ?? "Клиент"} · ${a.serviceName} → ${fmtDate(date)} в ${start}`);
+      notify(d, { kind: "client", id: c?.phone ?? "" }, "move", "Запись перенесена", `${m.name}: ${a.serviceName}, теперь ${fmtDate(date)} в ${start}`, { apptId: a.id, masterId: m.id });
+      notify(d, { kind: "master", id: m.id }, "move", "Перенос в календаре", `${c?.name ?? "Клиент"} · ${a.serviceName} → ${fmtDate(date)} в ${start}`, { apptId: a.id, masterId: m.id });
     }
   });
   return err;
@@ -610,7 +642,7 @@ export function runReminderJob() {
       if (planOf(m).reminders && !seen.has("m" + m.id)) {
         seen.add("m" + m.id);
         const list = d.appointments.filter((x) => x.masterId === m.id && x.date === tomorrow && (x.status === "confirmed" || x.status === "pending")).sort((x, y) => x.start.localeCompare(y.start));
-        notify(d, { kind: "master", id: m.id }, "remind", "Напоминание о записях", `Завтра у вас ${list.length} ${list.length === 1 ? "запись" : list.length < 5 ? "записи" : "записей"} — первая в ${list[0].start}`);
+        notify(d, { kind: "master", id: m.id }, "remind", "Напоминание о записях", `Завтра у вас ${list.length} ${list.length === 1 ? "запись" : list.length < 5 ? "записи" : "записей"} — первая в ${list[0].start}`, { masterId: m.id });
       }
       if (!seen.has("c" + a.id)) {
         seen.add("c" + a.id);
@@ -648,6 +680,47 @@ export function submitTicket(p: { author: string; contact: string; topic: string
 }
 export const setTicketStatus = (id: string, status: Ticket["status"]) =>
   set((d) => { const t = d.tickets.find((x) => x.id === id); if (t) t.status = status; });
+
+// ─── Чат «мастер ↔ администрация» ──────────────────────────────
+export function sendChat(masterId: string, from: ChatMessage["from"], text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return "Сообщение пустое";
+  set((d) => {
+    d.chat.push({ id: uid(), masterId, from, text: trimmed, createdAt: Date.now(), readByAdmin: from === "admin", readByMaster: from === "master" });
+    const m = d.masters.find((x) => x.id === masterId);
+    if (from === "master") {
+      notify(d, { kind: "admin" }, "system", `Сообщение от ${m?.name ?? "мастера"}`, trimmed.slice(0, 80), { masterId, chat: true });
+    } else {
+      notify(d, { kind: "master", id: masterId }, "system", "Ответ администрации", trimmed.slice(0, 80), { masterId, chat: true });
+    }
+  });
+  return null;
+}
+
+/** Пометить сообщения треда прочитанными для стороны */
+export function markChatRead(masterId: string, side: "admin" | "master") {
+  set((d) => {
+    for (const msg of d.chat) {
+      if (msg.masterId !== masterId) continue;
+      if (side === "admin" && msg.from === "master") msg.readByAdmin = true;
+      if (side === "master" && msg.from === "admin") msg.readByMaster = true;
+    }
+  });
+}
+
+export const unreadChatFor = (d: DB, masterId: string, side: "admin" | "master") =>
+  d.chat.filter((msg) => msg.masterId === masterId && (side === "admin" ? msg.from === "master" && !msg.readByAdmin : msg.from === "admin" && !msg.readByMaster)).length;
+
+/** Все треды для админа: мастер + последнее сообщение + непрочитанные */
+export function chatThreads(d: DB) {
+  return d.masters
+    .filter((m) => !m.blocked)
+    .map((m) => {
+      const msgs = d.chat.filter((x) => x.masterId === m.id).sort((a, b) => a.createdAt - b.createdAt);
+      return { master: m, last: msgs[msgs.length - 1] ?? null, unread: unreadChatFor(d, m.id, "admin") };
+    })
+    .sort((a, b) => (b.last?.createdAt ?? 0) - (a.last?.createdAt ?? 0));
+}
 
 // ─── Отзывы и рейтинги ─────────────────────────────────────────
 export const hasReview = (d: DB, apptId: string) => d.reviews.some((r) => r.apptId === apptId);
@@ -689,21 +762,55 @@ export function searchMasters(d: DB, q: string, city: string, sort: "rating" | "
   };
   let list = d.masters.filter((m) => !m.blocked);
   if (city !== "Все") list = list.filter((m) => m.city === city);
-  const query = q.trim().toLowerCase();
+  const query = q.trim();
+
   if (query) {
-    list = list.filter((m) => {
-      const svcNames = d.services.filter((s) => s.masterId === m.id && s.active).map((s) => s.name.toLowerCase()).join(" ");
-      return (m.name + " " + m.profession + " " + svcNames + " " + m.city).toLowerCase().includes(query);
-    });
+    // нечёткий поиск: терпим опечатки в именах, профессиях и услугах
+    const scored = list
+      .map((m) => {
+        const svcNames = d.services.filter((s) => s.masterId === m.id && s.active).map((s) => s.name).join(" ");
+        const s = Math.max(
+          fuzzyScore(query, m.name) * 1.2,
+          fuzzyScore(query, m.profession) * 1.1,
+          fuzzyScore(query, svcNames),
+          fuzzyScore(query, m.city) * 0.9
+        );
+        return { m, s };
+      })
+      .filter((x) => x.s > 0)
+      .sort((a, b) => b.s - a.s);
+    list = scored.map((x) => x.m);
   }
+
   const plan = (m: Master) => d.settings.plans[m.plan]?.priority ?? 0;
   return [...list].sort((a, b) => {
-    const p = plan(b) - plan(a) || Number(b.promoted) - Number(a.promoted);
-    if (p) return p;
+    if (!query) {
+      const p = plan(b) - plan(a) || Number(b.promoted) - Number(a.promoted);
+      if (p) return p;
+    }
     if (sort === "price") return minPrice(a.id) - minPrice(b.id);
     if (sort === "reviews") return b.reviews - a.reviews;
     return b.rating - a.rating;
   });
+}
+
+/* Подсказки для строки поиска (мастера + услуги), нечёткие */
+export interface Suggestion { kind: "master" | "service"; label: string; sub: string; href: string }
+export function suggest(d: DB, q: string): Suggestion[] {
+  const query = q.trim();
+  if (query.length < 2) return [];
+  const ms: (Suggestion & { s: number })[] = d.masters
+    .filter((m) => !m.blocked)
+    .map((m) => ({ kind: "master" as const, label: m.name, sub: m.profession, href: `#/m/${m.slug}`, s: Math.max(fuzzyScore(query, m.name) * 1.2, fuzzyScore(query, m.profession) * 1.1) }))
+    .filter((x) => x.s > 0);
+  const ss: (Suggestion & { s: number })[] = d.services
+    .filter((s) => s.active)
+    .map((s) => {
+      const m = d.masters.find((x) => x.id === s.masterId);
+      return { kind: "service" as const, label: s.name, sub: m ? `${m.name} · ${fmtMoney(s.price)}` : "", href: m ? `#/m/${m.slug}` : "#/", s: fuzzyScore(query, s.name) };
+    })
+    .filter((x) => x.s > 0 && x.href !== "#/");
+  return [...ms, ...ss].sort((a, b) => b.s - a.s).slice(0, 7);
 }
 
 export const PAY_LIST = (m?: Master | null) => (m ? m.paymentMethods : Object.keys(PAYMENTS)).map((k) => ({ id: k, label: PAYMENTS[k] }));

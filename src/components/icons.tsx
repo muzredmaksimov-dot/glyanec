@@ -51,4 +51,5 @@ export const IcGift = (p: P) => <S {...p}><rect x="4" y="8.5" width="16" height=
 export const IcHeart = (p: P) => <S {...p}><path d="M12 20s-7.5-4.6-9.3-9.2C1.5 7.6 3.6 4.5 6.8 4.5c2 0 3.7 1.1 5.2 3 1.5-1.9 3.2-3 5.2-3 3.2 0 5.3 3.1 4.1 6.3C19.5 15.4 12 20 12 20z" /></S>;
 export const IcLifeBuoy = (p: P) => <S {...p}><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="3.5" /><path d="M6 6l3.5 3.5M18 6l-3.5 3.5M18 18l-3.5-3.5M6 18l3.5-3.5" /></S>;
 export const IcInbox = (p: P) => <S {...p}><path d="M3.5 13.5L6 5.5h12l2.5 8" /><path d="M3.5 13.5h5l1.5 2.5h4l1.5-2.5h5V18a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 18z" /></S>;
+export const IcChat = (p: P) => <S {...p}><path d="M21 11.5a7.5 7.5 0 0 1-7.5 7.5c-1.2 0-2.4-.28-3.4-.8L4 20l1.6-4.3A7.5 7.5 0 1 1 21 11.5z" /><path d="M8.5 10.5h7M8.5 13.5h4.5" /></S>;
 export const IcCloud = (p: P) => <S {...p}><path d="M7 18.5a4.5 4.5 0 1 1 .9-8.9A6 6 0 0 1 19.6 11.6a3.7 3.7 0 0 1-1.1 6.9z" /></S>;

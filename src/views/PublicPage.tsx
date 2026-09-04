@@ -199,8 +199,13 @@ export default function PublicPage({ slug, initialDate }: { slug: string; initia
                     <div className="mt-0.5 text-ink-800/70">{fmtDate(done.date)} в {done.start} · {done.durationMin} мин</div>
                     <div className="mt-0.5 text-ink-800/70">{PAYMENTS[done.paymentMethod]} · {fmtMoney(done.price)}</div>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Btn v="dark" sm onClick={() => downloadICS({ title: done.serviceName, date: done.date, start: done.start, durationMin: done.durationMin, address: master.address || "", master: master.name })}>
-                        <IcDownload size={14} />В календарь (.ics)
+                      <Btn v="dark" sm onClick={() => {
+                        const r = downloadICS({ title: done.serviceName, date: done.date, start: done.start, durationMin: done.durationMin, address: master.address || "", master: master.name });
+                        toast(r === "shared"
+                          ? "Выберите «Календарь» в открывшемся окне — событие добавится само"
+                          : "Файл zapis.ics скачан — откройте его в «Загрузках», чтобы добавить событие", "info");
+                      }}>
+                        <IcDownload size={14} />В календарь телефона
                       </Btn>
                       <a href="#/my"><Btn v="outline" sm>Мои записи<IcArrowR size={13} /></Btn></a>
                     </div>

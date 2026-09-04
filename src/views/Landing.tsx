@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useDB, useSession, searchMasters } from "../lib/store";
+import { useDB, useSession, searchMasters, suggest } from "../lib/store";
 import { freeSlots, addDays, todayISO, nextDays, fmtDate } from "../lib/schedule";
 import { cx, fmtMoney } from "../lib/util";
 import type { Master } from "../lib/types";
@@ -18,6 +18,8 @@ export default function Landing() {
   const [city, setCity] = useState("Все");
   const [sort, setSort] = useState<"rating" | "reviews" | "price">("rating");
   const [panelProf, setPanelProf] = useState("Все");
+  const [focus, setFocus] = useState(false);
+  const sugs = useMemo(() => suggest(db, q), [db, q]);
 
   const masters = useMemo(() => {
     const ms = db.masters.filter((m) => !m.blocked);
@@ -198,8 +200,39 @@ export default function Landing() {
           </div>
           <div className="mt-6 flex flex-col gap-3 lg:flex-row lg:items-center">
             <div className="relative flex-1">
-              <IcSearch size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-700/40" />
-              <input className={cx(inp, "pl-10 !py-3")} placeholder="Услуга, имя или направление — «маникюр», «окрашивание», «Алина»…" value={q} onChange={(e) => setQ(e.target.value)} />
+              <IcSearch size={17} className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2 text-ink-700/40" />
+              <input
+                className={cx(inp, "pl-10 !py-3")}
+                placeholder="Услуга, имя или направление — «маникюр», «окрашивание», «Алина»…"
+                value={q}
+                onChange={(e) => { setQ(e.target.value); setFocus(true); }}
+                onFocus={() => setFocus(true)}
+                onBlur={() => setTimeout(() => setFocus(false), 140)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && sugs[0]) { setFocus(false); location.hash = sugs[0].href; }
+                }}
+              />
+              {q.trim().length >= 2 && focus && (
+                <div className="absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-xl border border-ink-900/10 bg-white shadow-2xl shadow-ink-950/15 animate-rise">
+                  {sugs.length === 0 ? (
+                    <p className="px-4 py-3.5 text-[13px] font-semibold text-ink-700/55">Ничего похожего не нашлось — попробуйте иначе, мы понимаем опечатки</p>
+                  ) : (
+                    sugs.map((s, i) => (
+                      <button key={s.kind + s.label + i} onMouseDown={() => { setFocus(false); setQ(s.label); location.hash = s.href; }}
+                        className={cx("flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors cursor-pointer hover:bg-berry-50", i > 0 && "border-t border-ink-900/5")}>
+                        <span className={cx("grid h-8 w-8 shrink-0 place-items-center rounded-lg", s.kind === "master" ? "bg-ink-900 text-berry-300" : "bg-berry-100 text-berry-600")}>
+                          {s.kind === "master" ? <IcScissors size={15} /> : <IcSparkle size={15} />}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold text-ink-900">{s.label}</span>
+                          <span className="block truncate text-[11px] font-semibold text-ink-700/55">{s.sub}</span>
+                        </span>
+                        <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-ink-700/40">{s.kind === "master" ? "мастер" : "услуга"}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {cities.map((c) => (

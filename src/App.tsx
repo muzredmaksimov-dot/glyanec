@@ -51,10 +51,14 @@ export default function App() {
     view = <Landing />;
   }
 
+  // В кабинете мастера и админке обратная связь живёт в меню (чат с администрацией),
+  // чтобы плавающая кнопка не перекрывала вкладки навигации
+  const hideFab = path === "/app" || path === "/admin";
+
   return (
     <ToastProvider>
       <div className="overflow-x-clip">{view}</div>
-      <FeedbackFab />
+      {!hideFab && <FeedbackFab />}
     </ToastProvider>
   );
 }

@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import type { Appointment, Master } from "../../lib/types";
+import type { Appointment, Master, Notif } from "../../lib/types";
 import { PAYMENTS, STATUS_META } from "../../lib/types";
-import { useDB, useSession, logout, book, setApptStatus, rescheduleAppt, planOf, markAllRead, markRead, unreadFor } from "../../lib/store";
-import { freeSlots, nextDays, todayISO, fmtDate, fmtRange, mondayOf, addDays, fromISO, mh, hm, wdIndex, WD, dayInfo } from "../../lib/schedule";
-import { cx, fmtMoney, fmtPhone, timeAgo } from "../../lib/util";
+import { useDB, useSession, logout, book, setApptStatus, rescheduleAppt, planOf, markAllRead, markRead, unreadFor, unreadChatFor } from "../../lib/store";
+import { freeSlots, nextDays, todayISO, fmtDate, fmtRange, mondayOf, addDays, fromISO, mh, hm, wdIndex, WD, dayInfo, isActive } from "../../lib/schedule";
+import { cx, fmtMoney, fmtPhone, timeAgo, telHref, downloadICS, isPhoneLike } from "../../lib/util";
 import { Btn, Modal, Confirm, useToast, inp, Field, Avatar, StatusBadge, CalendarMonth, SlotChips } from "../../components/ui";
 import {
   IcCalendar, IcUsers, IcChart, IcBell, IcSliders, IcSparkle, IcLogout, IcExternal,
-  IcPlus, IcCheck, IcX, IcClock, IcArrowL, IcArrowR, IcUser,
+  IcPlus, IcCheck, IcX, IcClock, IcArrowL, IcArrowR, IcUser, IcChat, IcPhone, IcDownload,
 } from "../../components/icons";
-import { ServicesTab, ScheduleTab, NotifsTab, ProfileTab } from "./Manage";
+import { ServicesTab, ScheduleTab, NotifsTab, ProfileTab, ChatTab } from "./Manage";
 import { StatsTab, ClientsTab } from "./Insights";
 
 const TABS = [
@@ -19,6 +19,7 @@ const TABS = [
   { id: "schedule", label: "График", ic: IcSliders },
   { id: "stats", label: "Статистика", ic: IcChart },
   { id: "notifs", label: "Уведомления", ic: IcBell },
+  { id: "chat", label: "Чат", ic: IcChat },
   { id: "profile", label: "Кабинет", ic: IcUser },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -46,8 +47,21 @@ function Shell({ master }: { master: Master }) {
   const [booking, setBooking] = useState<{ clientId?: string; date?: string; start?: string } | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
   const unread = unreadFor(db, { kind: "master", id: master.id });
+  const chatUnread = unreadChatFor(db, master.id, "master");
   const liveSel = sel ? db.appointments.find((a) => a.id === sel.id) ?? null : null;
   const plan = planOf(master);
+
+  /** Клик по уведомлению: открыть связанную запись / чат */
+  const openNotif = (n: Notif) => {
+    markRead(n.id);
+    setBellOpen(false);
+    if (n.chat) { setTab("chat"); return; }
+    if (n.apptId) {
+      const a = db.appointments.find((x) => x.id === n.apptId);
+      if (a) { setSel(a); setTab("calendar"); return; }
+    }
+    if (n.masterId) setTab("calendar");
+  };
 
   return (
     <div className="flex min-h-screen bg-milk-100 text-ink-900">
@@ -70,6 +84,7 @@ function Shell({ master }: { master: Master }) {
                 tab === t.id ? "bg-berry-600 text-white shadow-lg shadow-berry-600/25" : "text-milk-100/60 hover:bg-milk-100/8 hover:text-milk-100")}>
               <t.ic size={17} />{t.label}
               {t.id === "notifs" && unread > 0 && <span className="ml-auto rounded-full bg-honey-500 px-1.5 py-0.5 text-[10px] font-bold text-ink-950 tabular-nums">{unread}</span>}
+              {t.id === "chat" && chatUnread > 0 && <span className="ml-auto rounded-full bg-berry-500 px-1.5 py-0.5 text-[10px] font-bold text-white tabular-nums">{chatUnread}</span>}
             </button>
           ))}
         </nav>
@@ -110,12 +125,13 @@ function Shell({ master }: { master: Master }) {
                     </div>
                     <div className="max-h-80 overflow-y-auto p-2">
                       {db.notifications.filter((n) => n.target.kind === "master" && n.target.id === master.id).slice(0, 8).map((n) => (
-                        <button key={n.id} onClick={() => markRead(n.id)} className={cx("block w-full rounded-lg px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-milk-100", !n.read && "bg-honey-100/60")}>
+                        <button key={n.id} onClick={() => openNotif(n)} title="Открыть" className={cx("block w-full rounded-lg px-3 py-2.5 text-left transition-colors cursor-pointer hover:bg-milk-100 active:bg-berry-50", !n.read && "bg-honey-100/60")}>
                           <div className="flex items-center gap-2 text-[13px] font-bold">
                             <span className={cx("h-1.5 w-1.5 shrink-0 rounded-full", n.read ? "bg-ink-900/20" : "bg-honey-500")} />{n.title}
                             <span className="ml-auto shrink-0 text-[10px] font-semibold text-ink-700/45">{timeAgo(n.createdAt)}</span>
                           </div>
                           <div className="mt-0.5 pl-3.5 text-xs text-ink-800/70">{n.body}</div>
+                          {(n.apptId || n.chat) && <div className="mt-1 pl-3.5 text-[10px] font-bold uppercase tracking-wider text-berry-600">{n.chat ? "Открыть чат →" : "Открыть запись →"}</div>}
                         </button>
                       ))}
                       {db.notifications.filter((n) => n.target.kind === "master" && n.target.id === master.id).length === 0 && (
@@ -135,7 +151,8 @@ function Shell({ master }: { master: Master }) {
           {tab === "services" && <ServicesTab master={master} />}
           {tab === "schedule" && <ScheduleTab master={master} />}
           {tab === "stats" && <StatsTab master={master} />}
-          {tab === "notifs" && <NotifsTab master={master} />}
+          {tab === "notifs" && <NotifsTab master={master} onOpenAppt={(apptId) => { const a = db.appointments.find((x) => x.id === apptId); if (a) { setSel(a); setTab("calendar"); } }} />}
+          {tab === "chat" && <ChatTab master={master} />}
           {tab === "profile" && <ProfileTab master={master} />}
         </main>
       </div>
@@ -149,6 +166,7 @@ function Shell({ master }: { master: Master }) {
               <t.ic size={19} />
               {t.label}
               {t.id === "notifs" && unread > 0 && <span className="absolute right-1/4 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-coral-500 px-0.5 text-[9px] font-bold text-white tabular-nums">{unread}</span>}
+              {t.id === "chat" && chatUnread > 0 && <span className="absolute right-1/4 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-berry-500 px-0.5 text-[9px] font-bold text-white tabular-nums">{chatUnread}</span>}
             </button>
           ))}
         </div>
@@ -186,7 +204,10 @@ function CalendarTab({ master, onNew, onOpen }: { master: Master; onNew: (p: { d
           <button onClick={() => setMonday(addDays(monday, 7))} className="grid h-9 w-9 place-items-center rounded-lg border border-ink-900/12 bg-white hover:border-berry-400 cursor-pointer" aria-label="Следующая неделя"><IcArrowR size={16} /></button>
           <span className="ml-2 font-display text-sm font-bold">{fmtRange(days[0], days[6])}</span>
         </div>
-        <Btn sm onClick={() => onNew({})}><IcPlus size={15} />Новая запись</Btn>
+        <div className="flex flex-wrap gap-2">
+          <SyncCalendarBtn master={master} />
+          <Btn sm onClick={() => onNew({})}><IcPlus size={15} />Новая запись</Btn>
+        </div>
       </div>
       <p className="text-[11px] font-semibold text-ink-700/50 sm:hidden">Листайте таблицу вправо → · клик по пустому месту создаёт запись</p>
       <p className="hidden text-[11px] font-semibold text-ink-700/50 sm:block">Клик по пустому месту создаёт запись · клик по записи открывает действия</p>
@@ -264,6 +285,37 @@ function cname(db: ReturnType<typeof useDB>, clientId: string) {
   return db.clients.find((c) => c.id === clientId)?.name ?? "Клиент";
 }
 
+/** Синхронизация календаря со штатным календарём смартфона (iOS / Android / десктоп) */
+function SyncCalendarBtn({ master }: { master: Master }) {
+  const db = useDB();
+  const toast = useToast();
+  const exportAll = () => {
+    const today = todayISO();
+    const events = db.appointments
+      .filter((a) => a.masterId === master.id && a.date >= today && isActive(a))
+      .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start))
+      .map((a) => {
+        const c = db.clients.find((x) => x.id === a.clientId);
+        return {
+          title: `${a.serviceName} — ${c?.name ?? "клиент"}`,
+          date: a.date, start: a.start, durationMin: a.durationMin,
+          address: master.address || "",
+          description: `Клиент: ${c?.name ?? ""}${c ? ", " + fmtPhone(c.phone) : ""} · ${PAYMENTS[a.paymentMethod]} · ${fmtMoney(a.price)}`,
+        };
+      });
+    if (events.length === 0) return toast("Будущих записей пока нет", "info");
+    const r = downloadICS(events, "glyanets-kalendar.ics");
+    toast(r === "shared"
+      ? `Выберите «Календарь» в окне — добавится ${events.length} ${events.length === 1 ? "событие" : events.length < 5 ? "события" : "событий"}`
+      : "Файл календаря скачан — откройте его, чтобы импортировать события");
+  };
+  return (
+    <Btn sm v="outline" onClick={exportAll} title="Добавить все будущие записи в календарь телефона">
+      <IcDownload size={14} /><span className="hidden sm:inline">Синхронизировать</span><span className="sm:hidden">Календарь</span>
+    </Btn>
+  );
+}
+
 /* ─── Карточка записи ─── */
 function ApptDrawer({ master, appt, onClose, onResched }: { master: Master; appt: Appointment; onClose: () => void; onResched: () => void }) {
   const db = useDB();
@@ -282,7 +334,12 @@ function ApptDrawer({ master, appt, onClose, onResched }: { master: Master; appt
         <Avatar name={client?.name ?? "Клиент"} color={master.color} size={44} />
         <div className="min-w-0">
           <div className="font-display font-semibold">{client?.name ?? "Клиент"}</div>
-          {client && <div className="text-[13px] font-semibold text-ink-700/65">{fmtPhone(client.phone)}</div>}
+          {client && (
+            <a href={telHref(client.phone)}
+              className="mt-0.5 inline-flex items-center gap-1.5 rounded-md bg-jade-100 px-2 py-0.5 text-[12px] font-bold text-jade-700 transition-all hover:bg-jade-500 hover:text-white active:scale-95 cursor-pointer">
+              <IcPhone size={12} />{fmtPhone(client.phone)}
+            </a>
+          )}
         </div>
         <span className="ml-auto"><StatusBadge s={appt.status} /></span>
       </div>
@@ -305,6 +362,12 @@ function ApptDrawer({ master, appt, onClose, onResched }: { master: Master; appt
           </>
         )}
         {appt.status === "done" && <Btn sm v="outline" onClick={() => act("no_show", "Отмечено: клиент не пришёл")}>Клиент не пришёл</Btn>}
+        {(appt.status === "pending" || appt.status === "confirmed") && (
+          <Btn sm v="ghost" onClick={() => {
+            const r = downloadICS({ title: `${appt.serviceName} — ${client?.name ?? "клиент"}`, date: appt.date, start: appt.start, durationMin: appt.durationMin, address: master.address || "", description: `Клиент: ${client?.name ?? ""}, ${client ? fmtPhone(client.phone) : ""}` });
+            toast(r === "shared" ? "Выберите «Календарь» в окне — событие добавится" : "Файл скачан — откройте его, чтобы добавить событие");
+          }}><IcCalendar size={14} />В календарь</Btn>
+        )}
       </div>
       <Confirm open={cancelAsk} onClose={() => setCancelAsk(false)} onYes={() => act("cancelled", "Запись отменена, клиент уведомлён")} danger
         title="Отменить запись?" text="Слот станет свободным, а клиент получит уведомление об отмене." />
@@ -365,12 +428,22 @@ function NewBookingModal({ master, init, onClose }: { master: Master; init: { cl
               <Field label="Телефон"><input className={inp} type="tel" placeholder="+375 29 000-00-00" value={nPhone} onChange={(e) => setNPhone(e.target.value)} /></Field>
             </>
           ) : (
-            <Field label="Клиент">
-              <select className={inp} value={clientId} onChange={(e) => setClientId(e.target.value)}>
-                <option value="">— выберите —</option>
-                {myClients.map((c) => <option key={c.id} value={c.id}>{c.name} · {fmtPhone(c.phone)}</option>)}
-              </select>
-            </Field>
+            <div>
+              <Field label="Клиент">
+                <select className={inp} value={clientId} onChange={(e) => setClientId(e.target.value)}>
+                  <option value="">— выберите —</option>
+                  {myClients.map((c) => <option key={c.id} value={c.id}>{c.name} · {fmtPhone(c.phone)}</option>)}
+                </select>
+              </Field>
+              {clientId && (() => {
+                const c = myClients.find((x) => x.id === clientId);
+                return c ? (
+                  <a href={telHref(c.phone)} className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-jade-100 px-2.5 py-1 text-[12px] font-bold text-jade-700 transition-all hover:bg-jade-500 hover:text-white active:scale-95">
+                    <IcPhone size={12} />Позвонить: {fmtPhone(c.phone)}
+                  </a>
+                ) : null;
+              })()}
+            </div>
           )}
           <Field label="Услуга">
             <select className={inp} value={svcId} onChange={(e) => { setSvcId(e.target.value); setStart(null); }}>

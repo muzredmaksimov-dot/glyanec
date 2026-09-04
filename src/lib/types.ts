@@ -25,7 +25,8 @@ export interface Appointment {
   price: number; durationMin: number; date: string; start: string; status: ApptStatus;
   paymentMethod: string; createdAt: number; source: "online" | "master";
 }
-export interface Notif { id: string; target: NotifTarget; type: NotifType; title: string; body: string; read: boolean; createdAt: number }
+export interface Notif { id: string; target: NotifTarget; type: NotifType; title: string; body: string; read: boolean; createdAt: number; apptId?: string; masterId?: string; chat?: boolean }
+export interface ChatMessage { id: string; masterId: string; from: "master" | "admin"; text: string; createdAt: number; readByAdmin: boolean; readByMaster: boolean }
 export interface Review { id: string; masterId: string; clientId: string; clientName: string; apptId: string; serviceName: string; rating: number; text: string; createdAt: number }
 export interface Salon { id: string; name: string; slug: string; city: string; address: string; description: string; photo: string; color: string; masterIds: string[]; createdAt: number }
 export interface Ticket { id: string; author: string; contact: string; topic: string; message: string; page: string; status: "open" | "resolved"; createdAt: number }
@@ -38,7 +39,7 @@ export interface Settings {
 
 export interface DB {
   version: number; masters: Master[]; services: Service[]; clients: Client[]; appointments: Appointment[];
-  notifications: Notif[]; reviews: Review[]; salons: Salon[]; tickets: Ticket[]; settings: Settings;
+  notifications: Notif[]; reviews: Review[]; salons: Salon[]; tickets: Ticket[]; chat: ChatMessage[]; settings: Settings;
 }
 
 export type Session = { kind: "master"; masterId: string } | { kind: "admin" } | null;
