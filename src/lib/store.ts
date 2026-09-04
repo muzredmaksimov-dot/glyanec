@@ -3,7 +3,7 @@ import type { DB, Master, Service, Client, Appointment, Notif, NotifTarget, Plan
 import { PAYMENTS } from "./types";
 import { freeSlots, addDays, todayISO, fmtDate, dayInfo } from "./schedule";
 import { uid, mulberry, normPhone, translit, fuzzyScore, fmtMoney } from "./util";
-import { cloudReady, loadRemote, saveRemote, subscribeRemote, type RemoteRow } from "./cloud";
+import { cloudReady, getSupabase, loadRemote, saveRemote, subscribeRemote, type RemoteRow } from "./cloud";
 
 const DB_KEY = "glyanets_db";
 const SES_KEY = "glyanets_session";
@@ -282,7 +282,12 @@ function loadDB(): DB {
   return d;
 }
 
+/** true, пока идёт генерация демо-данных (пуш-очередь в это время не наполняем) */
+let seeding = true;
+export const doneSeeding = () => { seeding = false; };
+
 let db: DB = loadDB();
+doneSeeding();
 let session: Session = (() => {
   try { return JSON.parse(localStorage.getItem(SES_KEY) || "null"); } catch { return null; }
 })();
@@ -407,14 +412,33 @@ export function setSession(s: Session) {
 export type NotifMeta = { apptId?: string; masterId?: string; chat?: boolean };
 export const notify = (d: DB, target: NotifTarget, type: Notif["type"], title: string, body: string, meta?: NotifMeta) => {
   d.notifications.unshift({ id: uid(), target, type, title, body, read: false, createdAt: Date.now(), ...(meta ?? {}) });
+
+  // 1) Настоящий push через облако: событие уходит в очередь push_events,
+  //    webhook Supabase вызывает Edge Function, та рассылает пуш на устройства цели.
+  try {
+    if (!seeding) {
+      const supa = getSupabase();
+      if (supa) {
+        const url = target.kind === "master" ? "#/app" : target.kind === "client" ? "#/my" : "#/admin";
+        void supa.from("push_events").insert({
+          target_kind: target.kind,
+          target_id: target.kind === "admin" ? "admin" : (target as { id: string }).id,
+          title, body, url,
+        });
+      }
+    }
+  } catch { /* облако недоступно — работаем дальше */ }
+
+  // 2) Локальное системное уведомление — только если вкладка свёрнута:
+  //    когда приложение открыто, пользователя известят тост и колокольчик.
   try {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (typeof document !== "undefined" && document.visibilityState === "visible") return;
     const icon = "https://image.qwenlm.ai/generated-images/d6f7b473-8512-424a-996f-2579acb49cb5/_result.png";
-    const payload = { type: "glyanets:notify", title, body, tag: `${type}:${target.kind}`, hash: target.kind === "master" ? "#/app" : "#/my" };
-    // через service worker: работает на Android-PWA даже когда вкладка свёрнута
+    const hash = target.kind === "master" ? "#/app" : "#/my";
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.getRegistration().then((reg) => {
-        if (reg) reg.showNotification(title, { body, icon, badge: icon, vibrate: [120, 60, 120], tag: payload.tag, data: { hash: payload.hash } } as NotificationOptions);
+        if (reg) reg.showNotification(title, { body, icon, badge: icon, vibrate: [120, 60, 120], tag: `glyanets:${type}`, data: { url: hash } } as NotificationOptions);
         else new Notification(title, { body, icon });
       }).catch(() => new Notification(title, { body, icon }));
     } else {

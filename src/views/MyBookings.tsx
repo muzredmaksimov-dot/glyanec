@@ -5,6 +5,7 @@ import { useDB, cancelByClient, rescheduleAppt, hasReview, addReview } from "../
 import { fmtDate, todayISO, isActive, freeSlots } from "../lib/schedule";
 import { cx, fmtMoney, fmtPhone, normPhone, timeAgo } from "../lib/util";
 import { Btn, Confirm, StatusBadge, useToast, inp, Badge, Empty, Modal, CalendarMonth, SlotChips } from "../components/ui";
+import PushCard from "../components/PushCard";
 import { IcArrowL, IcBell, IcPhone, IcArrowR, IcBan, IcStar, IcCalendar, IcCheck } from "../components/icons";
 
 export default function MyBookings() {
@@ -57,6 +58,13 @@ export default function MyBookings() {
           </div>
           <p className="mt-2 text-xs text-ink-700/55">Здесь же появляются напоминания о визитах. Данные видны только вам.</p>
         </div>
+
+        {my && my.length > 0 && (
+          <div className="mt-4">
+            <PushCard target={{ kind: "client", id: norm }} title="Пуш о записях"
+              hint="Подтверждение, перенос, отмена и напоминание за день — на этот телефон по вашему номеру." />
+          </div>
+        )}
 
         {my === null && searched && <div className="mt-6"><Empty text="Укажите номер, на который записывались" /></div>}
 

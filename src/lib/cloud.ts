@@ -16,8 +16,8 @@ import type { DB } from "./types";
  * Таблица создаётся один раз SQL-скриптом из README (раздел «Общее хранилище»).
  */
 export const CLOUD = {
-  url: "https://qslodyttjqhiegibbfzu.supabase.co",
-  anonKey: "sb_publishable_gsWUzahzoJfnMN_sDL7paA_uIFH7hnM",
+  url: "",
+  anonKey: "",
 };
 
 export const cloudReady = () => Boolean(CLOUD.url && CLOUD.anonKey);
@@ -27,6 +27,9 @@ const cli = () => {
   if (!client && cloudReady()) client = createClient(CLOUD.url, CLOUD.anonKey);
   return client;
 };
+
+/** Публичный доступ к клиенту Supabase (для push-подписок и очереди событий) */
+export const getSupabase = () => cli();
 
 export interface RemoteRow { data: DB; updated_at: string }
 

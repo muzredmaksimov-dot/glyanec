@@ -8,14 +8,16 @@ import {
 import { addDays, todayISO, fmtDate, isActive } from "../../lib/schedule";
 import { cx, fmtMoney, fmtPhone, plural, timeAgo } from "../../lib/util";
 import { Btn, Badge, Avatar, Toggle, Confirm, useToast, inp, Field, Empty, Stars } from "../../components/ui";
+import PushCard from "../../components/PushCard";
 import {
   IcShield, IcChart, IcUsers, IcCrown, IcSliders, IcLogout, IcBoost, IcLock, IcCheck, IcX,
-  IcBan, IcExternal, IcCoin, IcBell, IcScissors, IcCalendar, IcInbox, IcCloud,
+  IcBan, IcExternal, IcCoin, IcBell, IcScissors, IcCalendar, IcInbox, IcCloud, IcChat, IcArrowL,
 } from "../../components/icons";
 
 const TABS = [
   { id: "overview", label: "Обзор", ic: IcChart },
   { id: "masters", label: "Мастера", ic: IcUsers },
+  { id: "chat", label: "Чаты", ic: IcChat },
   { id: "tickets", label: "Обращения", ic: IcInbox },
   { id: "promo", label: "Продвижение", ic: IcBoost },
   { id: "plans", label: "Тарифы и лимиты", ic: IcSliders },
@@ -464,11 +466,14 @@ function SettingsTab() {
               </Btn>
             </>
           ) : (
+
             <p className="mt-1.5 text-xs leading-relaxed text-ink-700/65">
               Пока данные хранятся в браузере каждого посетителя отдельно — поэтому на другом телефоне действует старый пароль, а записи клиентов не видны мастеру. Чтобы включить общее хранилище: создайте бесплатный проект на <b>supabase.com</b>, выполните SQL-скрипт из README (раздел «Общее хранилище») и вставьте два ключа в файл <b>src/lib/cloud.ts</b> в репозитории. Сайт обновится автоматически.
             </p>
           )}
         </section>
+        <PushCard target={{ kind: "admin", id: "admin" }} title="Пуш для администратора"
+          hint="Новые записи мастеров, заявки на тариф и сообщения в чате будут приходить на это устройство." />
         <section className="rounded-xl border-[1.5px] border-coral-500/40 bg-white p-5">
           <h3 className="font-display text-[15px] font-bold text-coral-600">Демо-данные</h3>
           <p className="mt-1 text-xs text-ink-700/60">Полный сброс платформы к исходному состоянию: мастера, записи, клиенты и настройки вернутся к демо-версии.</p>

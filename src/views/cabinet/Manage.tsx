@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Master, Service, PlanId } from "../../lib/types";
 import { PAYMENTS } from "../../lib/types";
-import { useDB, updateMaster, addService, updateService, deleteService, planOf, requestUpgrade, markAllRead, markRead, unreadFor, enablePush, pushGranted, sendChat, markChatRead, unreadChatFor } from "../../lib/store";
+import { useDB, updateMaster, addService, updateService, deleteService, planOf, requestUpgrade, markAllRead, markRead, unreadFor, sendChat, markChatRead, unreadChatFor } from "../../lib/store";
+import PushCard from "../../components/PushCard";
 import { WD, nextDays, fmtDate, fmtDateLong } from "../../lib/schedule";
 import { cx, fmtMoney, timeAgo } from "../../lib/util";
 import { Btn, Badge, Modal, Confirm, Toggle, useToast, inp, Field, Empty } from "../../components/ui";
@@ -221,25 +222,24 @@ export function NotifsTab({ master, onOpenAppt }: { master: Master; onOpenAppt?:
   const target = { kind: "master" as const, id: master.id };
   const list = db.notifications.filter((n) => n.target.kind === "master" && n.target.id === master.id);
   const unread = unreadFor(db, target);
-  const [pushOn, setPushOn] = useState(pushGranted());
 
   return (
     <div className="mx-auto max-w-2xl">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Btn v="ghost" sm onClick={() => { markAllRead(target); toast("Все прочитано"); }}>Прочитать все</Btn>
-        <button onClick={async () => { const ok = await enablePush(); setPushOn(ok); toast(ok ? "Push-уведомления включены" : "Браузер запретил уведомления", ok ? "ok" : "err"); }}
-          className={cx("ml-auto flex items-center gap-1.5 rounded-lg border-[1.5px] px-3 py-1.5 text-xs font-bold cursor-pointer transition-all", pushOn ? "border-jade-500 bg-jade-100 text-jade-700" : "border-ink-900/12 text-ink-700/60 hover:border-ink-900/35")}>
-          <IcBell size={13} />{pushOn ? "Push включены" : "Включить push"}
-        </button>
       </div>
-      <div className="mb-4 rounded-xl border border-jade-400/40 bg-jade-100/50 p-4">
-        <div className="flex items-center gap-2 text-[13px] font-bold text-jade-700">Push на Android — как включить</div>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-800/75">
-          <li>Откройте сайт в <b>Chrome</b> и нажмите меню ⋮ → <b>«Добавить на главный экран»</b> (или «Установить приложение»). На Android Chrome выдаёт разрешение на пуш <b>только установленным PWA</b>.</li>
-          <li>Запустите «Глянец» с рабочего стола и здесь нажмите <b>«Включить push»</b> — разрешите уведомления.</li>
-          <li>Если телефон Xiaomi/Samsung/Honor — зайдите в настройки батареи и снимите ограничения для «Глянец», иначе система «усыпит» уведомления.</li>
-        </ol>
-        <p className="mt-2 text-[11px] font-semibold text-ink-700/60">Пуш приходят, когда приложение открыто или свернуто. Полноценные пуш при закрытом приложении появятся после подключения общего облака (раздел «Данные и облако» в админке).</p>
+      <div className="mb-4 space-y-3">
+        <PushCard target={{ kind: "master", id: master.id }} title="Пуш-уведомления"
+          hint="Новая запись, отмена, перенос и напоминание за день — прилетят на это устройство, даже если приложение закрыто." />
+        <details className="rounded-xl border border-ink-900/10 bg-white px-4 py-3">
+          <summary className="cursor-pointer text-[13px] font-bold text-ink-800">Как включить на телефоне — пошагово</summary>
+          <ul className="mt-2 list-disc space-y-1.5 pl-5 text-xs leading-relaxed text-ink-800/75">
+            <li><b>Android (Chrome):</b> меню ⋮ → «Установить приложение» → запустите «Глянец» с рабочего стола → нажмите «Включить push» выше.</li>
+            <li><b>iPhone (Safari, iOS 16.4+):</b> «Поделиться» → «На экран „Домой"» → откройте с рабочего стола → «Включить push» → разрешите.</li>
+            <li><b>Xiaomi / Samsung / Honor:</b> в настройках батареи снимите ограничения для «Глянец», иначе система «усыпит» пуш.</li>
+            <li>Если пуш не пришёл — нажмите «Тест» и <b>сверните приложение</b>: при открытом окне уведомление показывается внутри (колокольчик).</li>
+          </ul>
+        </details>
       </div>
       {list.length === 0 ? <Empty text="Уведомлений пока нет" /> : (
         <div className="space-y-2">
