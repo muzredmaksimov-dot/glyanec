@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { PlanId } from "../../lib/types";
 import {
   useDB, useSession, loginAdmin, adminSetPlan, adminToggle, adminUpdatePlan, updateAdminCreds,
   approveUpgrade, rejectUpgrade, markAllRead, markRead, unreadFor, resetDemo, logout, setTicketStatus,
-  cloudOn, pushLocalToCloud, saveVapidPublic,
+  cloudOn, pushLocalToCloud, saveVapidPublic, sendChat, markChatRead, unreadChatFor,
+  paidPlansVisible, adminSetShowPaidPlans,
 } from "../../lib/store";
 import { generateVapidKeys } from "../../lib/push";
 import { addDays, todayISO, fmtDate, isActive } from "../../lib/schedule";
@@ -115,11 +116,151 @@ function Panel() {
         <main className="flex-1 px-4 py-6 sm:px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           {tab === "overview" && <Overview />}
           {tab === "masters" && <MastersTab />}
+          {tab === "chat" && <ChatsTab />}
           {tab === "tickets" && <TicketsTab />}
           {tab === "promo" && <PromoTab />}
           {tab === "plans" && <PlansTab />}
           {tab === "settings" && <SettingsTab />}
         </main>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Чаты с мастерами ─── */
+const QUICK = [
+  { l: "💳 Напомнить об оплате", t: "Здравствуйте! Напоминаем об оплате тарифа — она продлевает все возможности кабинета. Если уже оплатили, просто проигнорируйте. Спасибо, что вы с «Глянцем»!" },
+  { l: "👋 Приветствие", t: "Добро пожаловать на платформу! Если понадобится помощь с настройкой кабинета, услуг или записи — пишите, мы рядом." },
+  { l: "⭐ Предложить «Топ»", t: "Здравствуйте! Можем выделить ваш профиль в «Топ каталога» — так вас увидит больше клиентов. Рассказать подробнее?" },
+];
+
+function ChatsTab() {
+  const db = useDB();
+  const [selId, setSelId] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const endRef = useRef<HTMLDivElement>(null);
+  const masters = db.masters.filter((m) => !m.blocked);
+  const sel = masters.find((m) => m.id === selId) ?? null;
+  const msgs = sel ? db.chat.filter((m) => m.masterId === sel.id).sort((a, b) => a.createdAt - b.createdAt) : [];
+  const plans = db.settings.plans;
+
+  // открыли диалог / пришло сообщение — помечаем прочитанным и листаем вниз
+  useEffect(() => { if (selId) markChatRead(selId, "admin"); }, [selId, msgs.length]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs.length, selId]);
+
+  const submit = (val?: string) => {
+    const body = (val ?? text).trim();
+    if (!sel || !body) return;
+    sendChat(sel.id, "admin", body);
+    setText("");
+  };
+
+  const lastOf = (id: string) => {
+    const list = db.chat.filter((m) => m.masterId === id);
+    return list.length ? list[list.length - 1] : null;
+  };
+
+  /* Список всех мастеров (мобильный / левая колонка) */
+  const list = (
+    <div className="space-y-1.5">
+      {masters.map((m) => {
+        const last = lastOf(m.id);
+        const un = unreadChatFor(db, m.id, "admin");
+        const active = selId === m.id;
+        return (
+          <button key={m.id} onClick={() => setSelId(m.id)}
+            className={cx("flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all cursor-pointer",
+              active ? "border-berry-500 bg-berry-50" : "border-ink-900/8 bg-white hover:border-berry-300 hover:-translate-y-0.5 hover:shadow-md")}>
+            <Avatar src={m.photo} name={m.name} color={m.color} size={40} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate font-display text-sm font-semibold">{m.name}</span>
+                <span className="shrink-0 rounded-md bg-milk-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-ink-700/60">«{plans[m.plan].label}»</span>
+              </div>
+              <div className="truncate text-[11px] font-semibold text-ink-700/55">
+                {last ? `${last.from === "admin" ? "Вы: " : ""}${last.text}` : "Нет сообщений — напишите первым"}
+              </div>
+            </div>
+            {un > 0 && <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-coral-500 px-1 text-[10px] font-bold text-white tabular-nums">{un}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  /* Диалог с выбранным мастером */
+  const convo = sel && (
+    <div className="flex h-[calc(100dvh-16rem)] flex-col overflow-hidden rounded-xl border border-ink-900/10 bg-white lg:h-[calc(100vh-15rem)]">
+      <div className="flex items-center gap-3 border-b border-ink-900/8 bg-ink-900 px-4 py-3 text-milk-100">
+        <button onClick={() => setSelId(null)} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg transition-colors hover:bg-milk-100/10 lg:hidden cursor-pointer" aria-label="Назад"><IcArrowL size={16} /></button>
+        <Avatar src={sel.photo} name={sel.name} color={sel.color} size={38} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-display text-sm font-bold">{sel.name}</div>
+          <div className="text-[11px] font-semibold text-milk-100/60">{sel.profession} · тариф «{plans[sel.plan].label}»</div>
+        </div>
+        <a href={`#/m/${sel.slug}`} className="hidden shrink-0 items-center gap-1 rounded-lg bg-milk-100/10 px-2.5 py-1.5 text-[11px] font-bold text-milk-100/80 transition-colors hover:bg-milk-100/20 sm:flex">Страница<IcExternal size={12} /></a>
+      </div>
+
+      <div className="flex-1 space-y-2.5 overflow-y-auto bg-milk-100/50 p-4">
+        {msgs.length === 0 && (
+          <div className="grid h-full place-items-center text-center">
+            <div className="max-w-xs">
+              <span className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-berry-100 text-berry-600"><IcChat size={22} /></span>
+              <p className="mt-3 text-sm font-semibold text-ink-800/70">Переписки пока нет. Напишите {sel.name.split(" ")[0]} первым — например, напомните об оплате.</p>
+            </div>
+          </div>
+        )}
+        {msgs.map((m) => {
+          const mine = m.from === "admin";
+          return (
+            <div key={m.id} className={cx("flex", mine ? "justify-end" : "justify-start")}>
+              <div className={cx("max-w-[82%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm animate-rise",
+                mine ? "rounded-br-sm bg-ink-900 text-milk-50" : "rounded-bl-sm border border-ink-900/8 bg-white text-ink-900")}>
+                <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                <div className={cx("mt-1 text-[10px] font-semibold tabular-nums", mine ? "text-milk-100/50" : "text-ink-700/45")}>{timeAgo(m.createdAt)}</div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={endRef} />
+      </div>
+
+      <div className="border-t border-ink-900/8 bg-white p-2.5">
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {QUICK.map((q) => (
+            <button key={q.l} onClick={() => submit(q.t)}
+              className="rounded-full border border-ink-900/12 bg-milk-100 px-2.5 py-1 text-[11px] font-bold text-ink-800 transition-all hover:border-berry-400 hover:text-berry-700 active:scale-95 cursor-pointer">
+              {q.l}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input className={cx(inp, "flex-1")} placeholder={`Сообщение для ${sel.name.split(" ")[0]}…`} value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); } }} />
+          <Btn onClick={() => submit()} disabled={!text.trim()} aria-label="Отправить"><IcArrowL size={17} className="rotate-180" /></Btn>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-lg font-bold">Чаты с мастерами</h2>
+          <p className="text-xs font-semibold text-ink-700/55">Можно написать любому мастеру первым — напомнить об оплате, предложить «Топ» или помочь с настройкой.</p>
+        </div>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
+        <div className={cx(selId ? "hidden lg:block" : "block")}>{list}</div>
+        <div className={cx(selId ? "block" : "hidden lg:block")}>
+          {convo ?? (
+            <div className="grid h-64 place-items-center rounded-xl border border-dashed border-ink-900/15 bg-white/50 text-sm font-semibold text-ink-700/50 lg:h-[calc(100vh-15rem)]">
+              Выберите мастера, чтобы начать переписку
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -376,8 +517,18 @@ function PlansTab() {
   const toast = useToast();
   const plans = db.settings.plans;
   const num = (v: string, fb: number) => { const n = parseInt(v, 10); return Number.isFinite(n) && n >= 0 ? n : fb; };
+  const paidVisible = paidPlansVisible(db);
   return (
     <div>
+      <div className="mb-4 flex flex-col gap-3 rounded-xl border-[1.5px] border-honey-500/50 bg-honey-100/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2 font-display text-[15px] font-bold"><IcCrown size={17} className="text-honey-600" />Показывать платные тарифы</div>
+          <p className="mt-0.5 max-w-xl text-xs leading-relaxed text-ink-800/70">
+            Когда выключено, мастера и посетители видят только бесплатный «Старт» — кнопки повышения тарифа скрываются. Включите, когда наберёте достаточно мастеров. Сами лимиты ниже настраиваются всегда.
+          </p>
+        </div>
+        <Toggle on={paidVisible} onChange={(v) => { adminSetShowPaidPlans(v); toast(v ? "Платные тарифы снова видны мастерам" : "Платные тарифы скрыты — виден только «Старт»", "info"); }} />
+      </div>
       <p className="mb-4 max-w-2xl text-xs font-semibold text-ink-700/55">
         Лимиты применяются мгновенно ко всем мастерам тарифа: количество услуг, глубина статистики, напоминания и место в каталоге. Это и есть рычаг будущей монетизации.
       </p>
@@ -386,10 +537,13 @@ function PlansTab() {
           const pl = plans[p];
           const cnt = db.masters.filter((m) => m.plan === p).length;
           return (
-            <div key={p} className={cx("rounded-xl border-[1.5px] bg-white p-5", p === "pro" ? "border-berry-500" : "border-ink-900/10")}>
-              <div className="flex items-center justify-between">
+            <div key={p} className={cx("rounded-xl border-[1.5px] bg-white p-5 transition-opacity", p === "pro" ? "border-berry-500" : "border-ink-900/10", p !== "free" && !paidVisible && "opacity-60")}>
+              <div className="flex items-center justify-between gap-2">
                 <h3 className="font-display text-lg font-bold">«{pl.label}»</h3>
-                <Badge>{cnt} {plural(cnt, ["мастер", "мастера", "мастеров"])}</Badge>
+                <span className="flex items-center gap-1.5">
+                  {p !== "free" && !paidVisible && <Badge tone="ink">скрыт</Badge>}
+                  <Badge>{cnt} {plural(cnt, ["мастер", "мастера", "мастеров"])}</Badge>
+                </span>
               </div>
               <div className="mt-4 space-y-3">
                 <Field label="Цена, BYN/мес"><input type="number" min={0} className={inp} defaultValue={pl.price} onBlur={(e) => { adminUpdatePlan(p, { price: num(e.target.value, pl.price) }); toast("Цена обновлена", "info"); }} /></Field>

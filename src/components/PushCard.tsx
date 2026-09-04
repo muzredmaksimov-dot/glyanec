@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { pushState, subscribePush, unsubscribePush, sendTestPush, pushDiagnostics, type PushTarget, type PushState, type DiagStep } from "../lib/push";
+import { useSession } from "../lib/store";
 import { Btn, useToast } from "./ui";
-import { IcBell, IcCheck, IcX } from "./icons";
+import { IcBell, IcCheck, IcX, IcLifeBuoy, IcLock } from "./icons";
 import { cx } from "../lib/util";
 
 const META: Record<PushState["kind"], { label: string; text: string; dot: string; card: string }> = {
@@ -46,6 +47,8 @@ const META: Record<PushState["kind"], { label: string; text: string; dot: string
 /** Карточка настройки push-уведомлений: статус, включение, тест, отключение */
 export default function PushCard({ target, title, hint }: { target: PushTarget; title: string; hint?: string }) {
   const toast = useToast();
+  const session = useSession();
+  const isAdmin = session?.kind === "admin";
   const [st, setSt] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const [diag, setDiag] = useState<DiagStep[] | null>(null);
@@ -121,8 +124,33 @@ export default function PushCard({ target, title, hint }: { target: PushTarget; 
               <Btn sm v="ghost" onClick={disable} disabled={busy}>Выключить</Btn>
             </>
           )}
+          {st?.kind === "not-configured" && isAdmin && (
+            <a href="#/admin"><Btn sm v="gold" onClick={() => toast("Создайте ключи в блоке «Push · VAPID-ключи»", "info")}><IcLock size={13} />Создать ключи</Btn></a>
+          )}
+          <Btn sm v="ghost" onClick={() => (diag ? setDiag(null) : void runDiag())} disabled={busy}>
+            <IcLifeBuoy size={13} />{diag ? "Скрыть" : "Диагностика"}
+          </Btn>
         </div>
       </div>
+
+      {diag && (
+        <div className="mt-3 border-t border-ink-900/8 pt-3">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-ink-700/55 mb-2">Диагностика push</div>
+          <div className="space-y-1.5">
+            {diag.map((s, i) => (
+              <div key={i} className="flex items-start gap-2 text-[12px]">
+                <span className={cx("mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full", s.ok ? "bg-jade-500 text-white" : "bg-coral-500 text-white")}>
+                  {s.ok ? <IcCheck size={10} /> : <IcX size={10} />}
+                </span>
+                <span className={cx("font-semibold", s.ok ? "text-ink-800/80" : "text-ink-900")}>
+                  {s.label}
+                  {s.hint && !s.ok && <span className="block text-[11px] font-medium text-coral-600/90">{s.hint}</span>}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }

@@ -19,7 +19,7 @@ const IMG = {
 };
 
 const DEFAULT_PLANS: DB["settings"]["plans"] = {
-  free: { label: "Старт", price: 0, maxServices: 5, statDays: 7, reminders: false, priority: 0, perks: ["До 5 услуг", "Статистика за 7 дней", "Публичная страница", "Онлайн-запись"] },
+  free: { label: "Старт", price: 0, maxServices: 5, statDays: 7, reminders: true, priority: 0, perks: ["До 5 услуг", "Статистика за 7 дней", "Публичная страница", "Онлайн-запись", "Push-уведомления"] },
   pro: { label: "Профи", price: 25, maxServices: 20, statDays: 90, reminders: true, priority: 1, perks: ["До 20 услуг", "Статистика за 90 дней", "Push-напоминания", "Значок «Проверен»"] },
   vip: { label: "Люкс", price: 49, maxServices: 999, statDays: 365, reminders: true, priority: 2, perks: ["Услуги без лимита", "Статистика за год", "Приоритет в каталоге", "Бейдж «Топ» на витрине"] },
 };
@@ -265,7 +265,7 @@ function seedDB(): DB {
 
   return {
     version: SEED_VERSION, masters, services, clients, appointments, notifications, reviews, salons, tickets, chat,
-    settings: { adminLogin: "admin", adminPassword: "admin", plans: DEFAULT_PLANS, lastReminderDate: "" },
+    settings: { adminLogin: "admin", adminPassword: "admin", plans: DEFAULT_PLANS, lastReminderDate: "", showPaidPlans: true },
   };
 }
 
@@ -326,7 +326,7 @@ function normalizeDB(raw: DB): DB {
   d.salons = d.salons ?? [];
   d.tickets = d.tickets ?? [];
   d.chat = d.chat ?? [];
-  d.settings = { ...d.settings, plans: d.settings?.plans ?? DEFAULT_PLANS };
+  d.settings = { ...d.settings, plans: d.settings?.plans ?? DEFAULT_PLANS, showPaidPlans: d.settings?.showPaidPlans ?? true };
   return d;
 }
 
@@ -694,6 +694,10 @@ export const adminUpdatePlan = (plan: PlanId, patch: Partial<DB["settings"]["pla
 
 /** Сохранить публичный VAPID-ключ (генерируется в админке: Настройки → Push) */
 export const saveVapidPublic = (key: string) => set((d) => { d.settings.vapidPublic = key; });
+
+/** Показывать ли мастерам и на витрине платные тарифы */
+export const paidPlansVisible = (d: DB) => d.settings.showPaidPlans !== false;
+export const adminSetShowPaidPlans = (v: boolean) => set((d) => { d.settings.showPaidPlans = v; });
 export const resetDemo = () => { localStorage.removeItem(DB_KEY); localStorage.removeItem(SES_KEY); location.reload(); };
 export const clearNotifications = (t: NotifTarget) =>
   set((d) => { d.notifications = d.notifications.filter((n) => !matchTarget(n, t)); });

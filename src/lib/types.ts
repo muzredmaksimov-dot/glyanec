@@ -37,6 +37,8 @@ export interface Settings {
   lastReminderDate: string;
   /** Публичный VAPID-ключ для Web Push (генерируется в админке: Настройки → Push) */
   vapidPublic?: string;
+  /** Показывать платные тарифы мастерам и на витрине. false — виден только бесплатный план. */
+  showPaidPlans?: boolean;
 }
 
 export interface DB {

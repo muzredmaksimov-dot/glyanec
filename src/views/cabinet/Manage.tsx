@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Master, Service, PlanId } from "../../lib/types";
 import { PAYMENTS } from "../../lib/types";
-import { useDB, updateMaster, addService, updateService, deleteService, planOf, requestUpgrade, markAllRead, markRead, unreadFor, sendChat, markChatRead, unreadChatFor } from "../../lib/store";
+import { useDB, updateMaster, addService, updateService, deleteService, planOf, requestUpgrade, markAllRead, markRead, unreadFor, sendChat, markChatRead, unreadChatFor, paidPlansVisible } from "../../lib/store";
 import PushCard from "../../components/PushCard";
 import { WD, nextDays, fmtDate, fmtDateLong } from "../../lib/schedule";
 import { cx, fmtMoney, timeAgo } from "../../lib/util";
@@ -364,7 +364,7 @@ export function ProfileTab({ master }: { master: Master }) {
             <li className="flex justify-between"><span className="text-ink-700/70">Напоминания клиентам</span><b className={plan.reminders ? "text-jade-600" : "text-coral-600"}>{plan.reminders ? "включены" : "выключены"}</b></li>
             <li className="flex justify-between"><span className="text-ink-700/70">Продвижение в каталоге</span><b className={master.promoted ? "text-jade-600" : "text-ink-700/50"}>{master.promoted ? "активно" : "нет"}</b></li>
           </ul>
-          {master.plan !== "vip" && (
+          {master.plan !== "vip" && paidPlansVisible(db) && (
             <div className="mt-4 border-t border-ink-900/8 pt-4">
               <div className="text-xs font-bold uppercase tracking-wider text-ink-700/60 mb-2">Повысить тариф</div>
               <div className="flex gap-2">
@@ -376,6 +376,9 @@ export function ProfileTab({ master }: { master: Master }) {
               </div>
               <p className="mt-2 text-[11px] text-ink-700/50">Платёж не подключён: заявку подтверждает администрация платформы.</p>
             </div>
+          )}
+          {master.plan !== "vip" && !paidPlansVisible(db) && (
+            <p className="mt-4 border-t border-ink-900/8 pt-3 text-[11px] leading-relaxed text-ink-700/50">Сейчас действует бесплатный тариф со всеми базовыми возможностями, включая push-уведомления.</p>
           )}
         </section>
 

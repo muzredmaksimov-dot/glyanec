@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useDB, useSession, searchMasters, suggest } from "../lib/store";
+import { useDB, useSession, searchMasters, suggest, paidPlansVisible } from "../lib/store";
 import { freeSlots, addDays, todayISO, nextDays, fmtDate } from "../lib/schedule";
 import { cx, fmtMoney } from "../lib/util";
 import type { Master } from "../lib/types";
@@ -362,12 +362,18 @@ export default function Landing() {
           <Reveal className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <div className="text-xs font-bold uppercase tracking-[.18em] text-berry-400">Тарифы</div>
-              <h2 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">Растите — платформа подстроится</h2>
+              <h2 className="mt-2 font-display text-3xl font-bold tracking-tight sm:text-4xl">
+                {paidPlansVisible(db) ? "Растите — платформа подстроится" : "Начните бесплатно"}
+              </h2>
             </div>
-            <p className="max-w-xs text-sm text-milk-100/60">Подключение тарифов — через администрацию платформы. Лимиты настраиваются в админ-панели.</p>
+            <p className="max-w-xs text-sm text-milk-100/60">
+              {paidPlansVisible(db)
+                ? "Подключение тарифов — через администрацию платформы. Лимиты настраиваются в админ-панели."
+                : "Полный кабинет мастера без платы: запись, календарь, CRM, статистика и push-уведомления."}
+            </p>
           </Reveal>
-          <div className="mt-10 grid gap-4 lg:grid-cols-3">
-            {(Object.keys(plans) as (keyof typeof plans)[]).map((k, i) => {
+          <div className={cx("mt-10 grid gap-4", paidPlansVisible(db) ? "lg:grid-cols-3" : "mx-auto max-w-sm")}>
+            {((paidPlansVisible(db) ? Object.keys(plans) : ["free"]) as (keyof typeof plans)[]).map((k, i) => {
               const p = plans[k];
               const hot = k === "pro";
               return (

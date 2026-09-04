@@ -1,4 +1,5 @@
 import { getSupabase, cloudReady } from "./cloud";
+import { getDB } from "./store";
 
 /**
  * НАСТОЯЩИЕ PUSH-УВЕДОМЛЕНИЯ (Web Push / VAPID)
@@ -14,6 +15,19 @@ import { getSupabase, cloudReady } from "./cloud";
  *   3. Приватный — в секрет Edge Function (см. README, «Push-уведомления»)
  */
 export const VAPID_PUBLIC = "";
+
+/**
+ * Эффективный публичный ключ: берётся из настроек платформы (создаётся в
+ * админке: Настройки → Push · VAPID-ключи → «Создать ключи»), а если там
+ * пусто — из захардкоженного поля выше. Так ключи не нужно вставлять в код.
+ */
+export function effectiveVapidPublic(): string {
+  try {
+    return getDB().settings.vapidPublic || VAPID_PUBLIC;
+  } catch {
+    return VAPID_PUBLIC;
+  }
+}
 
 export type PushTarget = { kind: "master" | "client" | "admin"; id: string };
 
@@ -43,7 +57,7 @@ export type PushState =
 /** Текущий статус push для этого браузера */
 export async function pushState(): Promise<PushState> {
   if (!pushSupported()) return { kind: "unsupported" };
-  if (!VAPID_PUBLIC) return { kind: "not-configured" };
+  if (!effectiveVapidPublic()) return { kind: "not-configured" };
   if (!cloudReady()) return { kind: "no-cloud" };
   if (Notification.permission === "denied") return { kind: "denied" };
   try {
@@ -58,7 +72,7 @@ export async function pushState(): Promise<PushState> {
 /** Подписать это устройство на push для цели (мастер/клиент/админ) */
 export async function subscribePush(target: PushTarget): Promise<{ ok: boolean; error?: string }> {
   if (!pushSupported()) return { ok: false, error: "Этот браузер не поддерживает push" };
-  if (!VAPID_PUBLIC) return { ok: false, error: "Push ещё не настроен администратором платформы (нет VAPID-ключа)" };
+  if (!effectiveVapidPublic()) return { ok: false, error: "Push ещё не настроен администратором платформы (нет VAPID-ключа)" };
   if (!cloudReady()) return { ok: false, error: "Облако не подключено — push недоступны в локальном режиме" };
   try {
     const perm = await Notification.requestPermission();
@@ -68,7 +82,7 @@ export async function subscribePush(target: PushTarget): Promise<{ ok: boolean; 
     if (!sub) {
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
+        applicationServerKey: urlBase64ToUint8Array(effectiveVapidPublic()),
       });
     }
     const json = sub.toJSON();
@@ -173,17 +187,18 @@ export async function pushDiagnostics(target: PushTarget): Promise<DiagStep[]> {
     ok: pushSupported(),
     hint: pushSupported() ? undefined : "Нужен современный Chrome/Edge/Safari",
   });
+  const pub = effectiveVapidPublic();
   steps.push({
-    label: "Публичный VAPID-ключ вставлен в код",
-    ok: Boolean(VAPID_PUBLIC),
-    hint: VAPID_PUBLIC ? undefined : "src/lib/push.ts → поле VAPID_PUBLIC (см. README, шаг 2)",
+    label: "Публичный VAPID-ключ настроен",
+    ok: Boolean(pub),
+    hint: pub ? undefined : "Админ-панель → Настройки → «Push · VAPID-ключи» → «Создать ключи»",
   });
   steps.push({
     label: "Облако Supabase подключено",
     ok: cloudReady(),
     hint: cloudReady() ? undefined : "Заполните url и anonKey в src/lib/cloud.ts",
   });
-  if (!pushSupported() || !VAPID_PUBLIC || !cloudReady()) return steps;
+  if (!pushSupported() || !pub || !cloudReady()) return steps;
 
   steps.push({
     label: "Разрешение на уведомления",
