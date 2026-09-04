@@ -25,7 +25,7 @@ const META: Record<PushState["kind"], { label: string; text: string; dot: string
   },
   "not-configured": {
     label: "Push ещё не настроены",
-    text: "Администратору платформы нужно подключить VAPID-ключ (раздел README «Push-уведомления»). После этого кнопка заработает.",
+    text: "Администратору нужно создать VAPID-ключи: Админ-панель → Настройки → «Push · VAPID-ключи» → Создать ключи. После этого кнопка заработает.",
     dot: "bg-honey-500",
     card: "border-honey-500/50 bg-honey-100/60",
   },

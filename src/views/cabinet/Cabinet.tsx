@@ -7,7 +7,7 @@ import { cx, fmtMoney, fmtPhone, timeAgo, telHref, downloadICS, isPhoneLike } fr
 import { Btn, Modal, Confirm, useToast, inp, Field, Avatar, StatusBadge, CalendarMonth, SlotChips } from "../../components/ui";
 import {
   IcCalendar, IcUsers, IcChart, IcBell, IcSliders, IcSparkle, IcLogout, IcExternal,
-  IcPlus, IcCheck, IcX, IcClock, IcArrowL, IcArrowR, IcUser, IcChat, IcPhone, IcDownload,
+  IcPlus, IcCheck, IcX, IcClock, IcArrowL, IcArrowR, IcUser, IcChat, IcPhone, IcDownload, IcDots,
 } from "../../components/icons";
 import { ServicesTab, ScheduleTab, NotifsTab, ProfileTab, ChatTab } from "./Manage";
 import { StatsTab, ClientsTab } from "./Insights";
@@ -46,6 +46,7 @@ function Shell({ master }: { master: Master }) {
   const [resched, setResched] = useState<Appointment | null>(null);
   const [booking, setBooking] = useState<{ clientId?: string; date?: string; start?: string } | null>(null);
   const [bellOpen, setBellOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const unread = unreadFor(db, { kind: "master", id: master.id });
   const chatUnread = unreadChatFor(db, master.id, "master");
   const liveSel = sel ? db.appointments.find((a) => a.id === sel.id) ?? null : null;
@@ -157,20 +158,70 @@ function Shell({ master }: { master: Master }) {
         </main>
       </div>
 
-      {/* Мобильная навигация */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-900/10 bg-white/95 backdrop-blur-md lg:hidden">
-        <div className="flex items-stretch justify-between px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))]">
-          {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className={cx("relative flex flex-1 flex-col items-center gap-0.5 py-2 text-[9px] font-bold transition-colors cursor-pointer", tab === t.id ? "text-berry-600" : "text-ink-700/50")}>
-              <t.ic size={19} />
-              {t.label}
-              {t.id === "notifs" && unread > 0 && <span className="absolute right-1/4 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-coral-500 px-0.5 text-[9px] font-bold text-white tabular-nums">{unread}</span>}
-              {t.id === "chat" && chatUnread > 0 && <span className="absolute right-1/4 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-berry-500 px-0.5 text-[9px] font-bold text-white tabular-nums">{chatUnread}</span>}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {/* Мобильная навигация: 4 главные вкладки + «Ещё» */}
+      {(() => {
+        const MAIN = TABS.slice(0, 4);
+        const MORE = TABS.slice(4);
+        const inMore = MORE.some((t) => t.id === tab);
+        const moreBadge = unread + chatUnread;
+        const badgeFor = (id: string) => (id === "notifs" ? unread : id === "chat" ? chatUnread : 0);
+        return (
+          <>
+            <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-ink-900/10 bg-white/95 backdrop-blur-md lg:hidden">
+              <div className="grid grid-cols-5 px-1 pb-[max(0.35rem,env(safe-area-inset-bottom))]">
+                {MAIN.map((t) => (
+                  <button key={t.id} onClick={() => setTab(t.id)}
+                    className={cx("relative flex flex-col items-center gap-0.5 py-2 text-[10px] font-bold transition-colors cursor-pointer", tab === t.id ? "text-berry-600" : "text-ink-700/50")}>
+                    <t.ic size={20} />
+                    {t.label}
+                    {badgeFor(t.id) > 0 && <span className="absolute right-1/4 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-coral-500 px-0.5 text-[9px] font-bold text-white tabular-nums">{badgeFor(t.id)}</span>}
+                  </button>
+                ))}
+                <button onClick={() => setMoreOpen(true)}
+                  className={cx("relative flex flex-col items-center gap-0.5 py-2 text-[10px] font-bold transition-colors cursor-pointer", inMore ? "text-berry-600" : "text-ink-700/50")}>
+                  <IcDots size={20} />
+                  Ещё
+                  {moreBadge > 0 && <span className="absolute right-1/4 top-1 grid h-4 min-w-4 place-items-center rounded-full bg-coral-500 px-0.5 text-[9px] font-bold text-white tabular-nums">{moreBadge}</span>}
+                </button>
+              </div>
+            </nav>
+
+            {/* Выезжающая панель «Ещё» */}
+            {moreOpen && (
+              <div className="fixed inset-0 z-50 lg:hidden">
+                <div className="absolute inset-0 bg-ink-950/50 animate-fade" onClick={() => setMoreOpen(false)} />
+                <div className="absolute inset-x-0 bottom-0 animate-rise rounded-t-2xl bg-milk-50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl">
+                  <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-ink-900/15" />
+                  <div className="grid grid-cols-2 gap-2">
+                    {MORE.map((t) => (
+                      <button key={t.id} onClick={() => { setTab(t.id); setMoreOpen(false); }}
+                        className={cx("flex items-center gap-3 rounded-xl border-[1.5px] px-4 py-3.5 text-sm font-bold transition-all cursor-pointer active:scale-[.98]",
+                          tab === t.id ? "border-berry-500 bg-berry-50 text-berry-700" : "border-ink-900/10 bg-white text-ink-900 hover:border-ink-900/25")}>
+                        <t.ic size={19} />
+                        {t.label}
+                        {badgeFor(t.id) > 0 && <span className="ml-auto grid h-5 min-w-5 place-items-center rounded-full bg-coral-500 px-1 text-[10px] font-bold text-white tabular-nums">{badgeFor(t.id)}</span>}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-milk-100 px-3.5 py-2.5">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <Avatar src={master.photo} name={master.name} color={master.color} size={32} />
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-bold">{master.name}</div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-ink-700/50">Тариф «{plan.label}»</div>
+                      </div>
+                    </div>
+                    <button onClick={() => { logout(); location.hash = "#/"; }}
+                      className="flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] font-bold text-coral-600 transition-colors hover:bg-coral-100 cursor-pointer">
+                      <IcLogout size={14} />Выйти
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {liveSel && <ApptDrawer master={master} appt={liveSel} onClose={() => setSel(null)} onResched={() => { setResched(liveSel); setSel(null); }} />}
       {resched && <RescheduleModal master={master} appt={resched} onClose={() => setResched(null)} />}

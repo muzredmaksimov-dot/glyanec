@@ -35,6 +35,8 @@ export interface Settings {
   adminLogin: string; adminPassword: string;
   plans: Record<PlanId, { label: string; price: number; maxServices: number; statDays: number; reminders: boolean; priority: number; perks: string[] }>;
   lastReminderDate: string;
+  /** Публичный VAPID-ключ для Web Push (генерируется в админке: Настройки → Push) */
+  vapidPublic?: string;
 }
 
 export interface DB {

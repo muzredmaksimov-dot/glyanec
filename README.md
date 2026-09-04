@@ -134,10 +134,14 @@ drop policy if exists "anon insert events" on public.push_events;
 create policy "anon insert events" on public.push_events for insert to anon with check (true);
 ```
 
-### Шаг 2. VAPID-ключи
+### Шаг 2. VAPID-ключи (создаются на самом сайте, без терминала)
 
-В терминале: `npx web-push generate-vapid-keys` — команда напечатает два ключа.
-**Публичный** вставьте в файл `src/lib/push.ts` (поле `VAPID_PUBLIC`) и закоммитьте. Приватный понадобится на шаге 3.
+1. Откройте **админ-панель** → вкладка **«Настройки»** → блок **«Push · VAPID-ключи»**.
+2. Нажмите **«Создать ключи»**. Платформа сгенерирует пару прямо в браузере.
+3. **Публичный ключ сохранится автоматически** (ничего делать не нужно).
+4. **Приватный ключ** — нажмите «Показать» → «Копировать». Он понадобится на шаге 3.
+
+> Альтернатива для разработчиков: `npx web-push generate-vapid-keys` в терминале, публичный ключ — в `src/lib/push.ts` (поле `VAPID_PUBLIC`).
 
 ### Шаг 3. Edge Function
 
@@ -205,6 +209,11 @@ Deno.serve(async (req) => {
 
 ```bash
 supabase secrets set VAPID_PUBLIC=ПУБЛИЧНЫЙ_КЛЮЧ VAPID_PRIVATE=ПРИВАТНЫЙ_КЛЮЧ
+```
+
+> Без терминала: в дашборде Supabase → **Edge Functions** → вкладка **Secrets** → «Add a new secret». Добавьте два секрета: `VAPID_PUBLIC` (публичный ключ из админки) и `VAPID_PRIVATE` (приватный).
+
+```bash
 supabase functions deploy send-push --no-verify-jwt
 ```
 

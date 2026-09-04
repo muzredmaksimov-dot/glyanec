@@ -3,15 +3,16 @@ import type { PlanId } from "../../lib/types";
 import {
   useDB, useSession, loginAdmin, adminSetPlan, adminToggle, adminUpdatePlan, updateAdminCreds,
   approveUpgrade, rejectUpgrade, markAllRead, markRead, unreadFor, resetDemo, logout, setTicketStatus,
-  cloudOn, pushLocalToCloud,
+  cloudOn, pushLocalToCloud, saveVapidPublic,
 } from "../../lib/store";
+import { generateVapidKeys } from "../../lib/push";
 import { addDays, todayISO, fmtDate, isActive } from "../../lib/schedule";
 import { cx, fmtMoney, fmtPhone, plural, timeAgo } from "../../lib/util";
 import { Btn, Badge, Avatar, Toggle, Confirm, useToast, inp, Field, Empty, Stars } from "../../components/ui";
 import PushCard from "../../components/PushCard";
 import {
   IcShield, IcChart, IcUsers, IcCrown, IcSliders, IcLogout, IcBoost, IcLock, IcCheck, IcX,
-  IcBan, IcExternal, IcCoin, IcBell, IcScissors, IcCalendar, IcInbox, IcCloud, IcChat, IcArrowL,
+  IcBan, IcExternal, IcCoin, IcBell, IcScissors, IcCalendar, IcInbox, IcCloud, IcChat, IcArrowL, IcCopy,
 } from "../../components/icons";
 
 const TABS = [
@@ -416,6 +417,96 @@ function PlansTab() {
 }
 
 /* ─── Настройки ─── */
+/* ─── Генератор VAPID-ключей (прямо в браузере) ─── */
+function PushKeysSection() {
+  const db = useDB();
+  const toast = useToast();
+  const [keys, setKeys] = useState<{ publicKey: string; privateKey: string } | null>(null);
+  const [showPriv, setShowPriv] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const hasKey = Boolean(db.settings.vapidPublic);
+
+  const gen = async () => {
+    setBusy(true);
+    try {
+      const k = await generateVapidKeys();
+      saveVapidPublic(k.publicKey);
+      setKeys(k);
+      setShowPriv(false);
+      toast("Ключи созданы! Публичный уже сохранён в платформе");
+    } catch {
+      toast("Не получилось создать ключи в этом браузере", "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = (v: string, what: string) => {
+    navigator.clipboard.writeText(v)
+      .then(() => toast(`${what} скопирован`))
+      .catch(() => toast("Скопировать не удалось — выделите текст вручную", "err"));
+  };
+
+  return (
+    <section className="rounded-xl border border-ink-900/10 bg-white p-5">
+      <h3 className="font-display flex flex-wrap items-center gap-2 text-[15px] font-bold">
+        <IcBell size={17} className="text-berry-600" />Push · VAPID-ключи
+        {hasKey ? <Badge tone="jade">ключ сохранён</Badge> : <Badge tone="honey">ключа нет</Badge>}
+      </h3>
+      <p className="mt-1.5 text-xs leading-relaxed text-ink-700/65">
+        Ключи создаются прямо в вашем браузере и никуда не отправляются. Публичный ключ платформа сохранит сама —
+        останется один раз положить оба ключа в секреты Edge Function в Supabase.
+      </p>
+      <div className="mt-3">
+        <Btn v="dark" sm onClick={gen} disabled={busy}>
+          {busy ? "Создаём…" : hasKey ? "Создать новые ключи" : "Создать ключи"}
+        </Btn>
+      </div>
+
+      {keys && (
+        <div className="mt-4 animate-rise space-y-3">
+          {([["publicKey", "Публичный ключ", true], ["privateKey", "Приватный ключ", false]] as const).map(([k, label, isPub]) => {
+            const val = keys[k];
+            const shown = isPub || showPriv;
+            return (
+              <div key={k} className="rounded-lg border border-ink-900/10 bg-milk-100 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={cx("text-[11px] font-bold uppercase tracking-wider", isPub ? "text-jade-700" : "text-coral-600")}>
+                    {label}{isPub ? " · сохранён автоматически" : " · только для Edge Function"}
+                  </span>
+                  <span className="flex gap-1">
+                    {!isPub && <Btn v="ghost" sm onClick={() => setShowPriv(!showPriv)}>{shown ? "Скрыть" : "Показать"}</Btn>}
+                    <Btn v="outline" sm onClick={() => copy(val, label)}><IcCopy size={13} />Копировать</Btn>
+                  </span>
+                </div>
+                <code className="mt-2 block break-all rounded-md bg-white px-2.5 py-2 font-mono text-[11px] leading-relaxed text-ink-800/85">
+                  {shown ? val : "••••••••••••••••••••••••••••••••••••••••••••••••"}
+                </code>
+              </div>
+            );
+          })}
+          <ol className="list-decimal space-y-1 pl-5 text-xs leading-relaxed text-ink-800/75">
+            <li>Скопируйте <b>приватный ключ</b> (нажмите «Показать» → «Копировать»).</li>
+            <li>В Supabase: меню слева → <b>Edge Functions</b> → вкладка <b>Secrets</b> → добавьте два секрета: <code className="rounded bg-milk-100 px-1">VAPID_PUBLIC</code> (публичный ключ) и <code className="rounded bg-milk-100 px-1">VAPID_PRIVATE</code> (приватный).</li>
+            <li>Готово: в кабинете мастера (Уведомления) и у клиентов нажмите «Включить push», затем «Тест».</li>
+          </ol>
+          {hasKey && (
+            <p className="rounded-md bg-coral-100 px-3 py-2 text-[11px] font-semibold text-coral-700">
+              Важно: после создания новых ключей обновите оба секрета (VAPID_PUBLIC и VAPID_PRIVATE) в Edge Function, иначе пуш перестанут доставляться.
+            </p>
+          )}
+        </div>
+      )}
+
+      {!keys && hasKey && (
+        <p className="mt-3 text-[11px] font-semibold text-ink-700/55">
+          Публичный ключ в настройках: <code className="break-all">{db.settings.vapidPublic?.slice(0, 36)}…</code>
+        </p>
+      )}
+    </section>
+  );
+}
+
 function SettingsTab() {
   const db = useDB();
   const toast = useToast();
@@ -475,6 +566,7 @@ function SettingsTab() {
         <PushCard target={{ kind: "admin", id: "admin" }} title="Пуш для администратора"
           hint="Новые записи мастеров, заявки на тариф и сообщения в чате будут приходить на это устройство." />
         <section className="rounded-xl border-[1.5px] border-coral-500/40 bg-white p-5">
+          <PushKeysSection />
           <h3 className="font-display text-[15px] font-bold text-coral-600">Демо-данные</h3>
           <p className="mt-1 text-xs text-ink-700/60">Полный сброс платформы к исходному состоянию: мастера, записи, клиенты и настройки вернутся к демо-версии.</p>
           <Btn v="dangerGhost" sm className="mt-3" onClick={() => setReset(true)}>Сбросить демо-данные</Btn>

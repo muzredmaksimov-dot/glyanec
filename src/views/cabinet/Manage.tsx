@@ -415,7 +415,7 @@ export function ChatTab({ master }: { master: Master }) {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-13rem)] max-w-2xl flex-col lg:h-[calc(100vh-11rem)]">
+    <div className="mx-auto flex h-[calc(100dvh-16.5rem)] max-w-2xl flex-col lg:h-[calc(100vh-11rem)]">
       <div className="flex items-center gap-3 rounded-t-xl border border-b-0 border-ink-900/10 bg-ink-900 px-4 py-3 text-milk-100">
         <span className="grid h-10 w-10 place-items-center rounded-lg bg-berry-600 text-white"><IcLifeBuoy size={19} /></span>
         <div className="min-w-0">

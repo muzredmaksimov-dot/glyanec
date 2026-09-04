@@ -691,6 +691,9 @@ export const adminToggle = (masterId: string, key: "promoted" | "verified" | "bl
   set((d) => { const m = d.masters.find((x) => x.id === masterId); if (m) m[key] = !m[key]; });
 export const adminUpdatePlan = (plan: PlanId, patch: Partial<DB["settings"]["plans"][PlanId]>) =>
   set((d) => { Object.assign(d.settings.plans[plan], patch); });
+
+/** Сохранить публичный VAPID-ключ (генерируется в админке: Настройки → Push) */
+export const saveVapidPublic = (key: string) => set((d) => { d.settings.vapidPublic = key; });
 export const resetDemo = () => { localStorage.removeItem(DB_KEY); localStorage.removeItem(SES_KEY); location.reload(); };
 export const clearNotifications = (t: NotifTarget) =>
   set((d) => { d.notifications = d.notifications.filter((n) => !matchTarget(n, t)); });
